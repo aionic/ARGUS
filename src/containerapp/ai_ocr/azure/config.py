@@ -37,6 +37,15 @@ def get_config(cosmos_config_container=None):
         "openai_api_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT", None),
         "openai_api_version": "2024-12-01-preview",
         "openai_model_deployment": os.getenv("AZURE_OPENAI_MODEL_DEPLOYMENT_NAME", None),
+        # Content Understanding (selectable full-analyzer extraction backend)
+        "content_understanding_endpoint": os.getenv("AZURE_CONTENT_UNDERSTANDING_ENDPOINT", None),
+        "content_understanding_api_version": os.getenv("CONTENT_UNDERSTANDING_API_VERSION", "2025-11-01"),
+        # Solution-wide default extraction backend ("gpt" | "content_understanding").
+        # Overridable per-dataset via processing_options.extraction_backend.
+        "extraction_backend": os.getenv("EXTRACTION_BACKEND", "gpt").lower(),
+        # Optional cheaper model deployment for the (text-only) summary stage.
+        # Falls back to the main deployment when unset.
+        "summary_model_deployment": os.getenv("SUMMARY_MODEL_DEPLOYMENT_NAME", None),
         "temp_images_outdir": os.getenv("TEMP_IMAGES_OUTDIR", "/tmp/"),
         "azure_openai_token_provider": get_azure_openai_token_provider(),
     }

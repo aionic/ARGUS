@@ -35,8 +35,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH"
 
 # Install runtime dependencies
+# libglib2.0-0 provides libgthread-2.0.so.0 required by opencv-python-headless (cv2)
 RUN apt-get update && apt-get install -y \
     curl \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder stage

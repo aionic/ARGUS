@@ -59,6 +59,10 @@ interface DatasetConfig {
     include_images: boolean
     enable_summary: boolean
     enable_evaluation: boolean
+    extraction_backend?: string
+    enable_preprocessing?: boolean
+    enable_enhancement?: boolean
+    skip_if_still_bad?: boolean
   }
 }
 
@@ -78,7 +82,11 @@ export default function ProcessFilesPage() {
     include_ocr: true,
     include_images: true,
     enable_summary: true,
-    enable_evaluation: true
+    enable_evaluation: true,
+    extraction_backend: "gpt",
+    enable_preprocessing: false,
+    enable_enhancement: true,
+    skip_if_still_bad: false
   })
   const [files, setFiles] = React.useState<File[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
@@ -95,7 +103,11 @@ export default function ProcessFilesPage() {
     include_ocr: true,
     include_images: true,
     enable_summary: true,
-    enable_evaluation: true
+    enable_evaluation: true,
+    extraction_backend: "gpt",
+    enable_preprocessing: false,
+    enable_enhancement: true,
+    skip_if_still_bad: false
   })
 
   // Load configuration on mount
@@ -110,11 +122,16 @@ export default function ProcessFilesPage() {
       setModelPrompt(datasetConfig.model_prompt || "")
       setExampleSchema(JSON.stringify(datasetConfig.example_schema || {}, null, 2))
       setMaxPagesPerChunk(datasetConfig.max_pages_per_chunk || 10)
-      setProcessingOptions(datasetConfig.processing_options || {
+      setProcessingOptions({
         include_ocr: true,
         include_images: true,
         enable_summary: true,
-        enable_evaluation: true
+        enable_evaluation: true,
+        extraction_backend: "gpt",
+        enable_preprocessing: false,
+        enable_enhancement: true,
+        skip_if_still_bad: false,
+        ...datasetConfig.processing_options
       })
     }
   }, [selectedDataset, configuration])
@@ -223,7 +240,11 @@ export default function ProcessFilesPage() {
         include_ocr: true,
         include_images: true,
         enable_summary: true,
-        enable_evaluation: true
+        enable_evaluation: true,
+        extraction_backend: "gpt",
+        enable_preprocessing: false,
+        enable_enhancement: true,
+        skip_if_still_bad: false
       })
 
       toast.success(`Dataset "${newDatasetName}" created successfully!`)
@@ -379,12 +400,29 @@ export default function ProcessFilesPage() {
 
                   <div className="space-y-3">
                     <Label>Processing Options</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="new_extraction_backend" className="text-sm">Extraction Backend</Label>
+                      <Select
+                        value={newProcessingOptions.extraction_backend}
+                        onValueChange={(value) =>
+                          setNewProcessingOptions({ ...newProcessingOptions, extraction_backend: value })
+                        }
+                      >
+                        <SelectTrigger id="new_extraction_backend">
+                          <SelectValue placeholder="Select extraction backend" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt">GPT (vision)</SelectItem>
+                          <SelectItem value="content_understanding">Content Understanding</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="new_include_ocr"
                           checked={newProcessingOptions.include_ocr}
-                          onCheckedChange={(checked) => 
+                          onCheckedChange={(checked) =>
                             setNewProcessingOptions({ ...newProcessingOptions, include_ocr: !!checked })
                           }
                         />
@@ -394,7 +432,7 @@ export default function ProcessFilesPage() {
                         <Checkbox
                           id="new_include_images"
                           checked={newProcessingOptions.include_images}
-                          onCheckedChange={(checked) => 
+                          onCheckedChange={(checked) =>
                             setNewProcessingOptions({ ...newProcessingOptions, include_images: !!checked })
                           }
                         />
@@ -419,6 +457,16 @@ export default function ProcessFilesPage() {
                           }
                         />
                         <Label htmlFor="new_enable_evaluation" className="text-sm">Evaluation</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="new_enable_preprocessing"
+                          checked={newProcessingOptions.enable_preprocessing}
+                          onCheckedChange={(checked) =>
+                            setNewProcessingOptions({ ...newProcessingOptions, enable_preprocessing: !!checked })
+                          }
+                        />
+                        <Label htmlFor="new_enable_preprocessing" className="text-sm">Image Preprocessing</Label>
                       </div>
                     </div>
                   </div>
@@ -521,6 +569,24 @@ export default function ProcessFilesPage() {
                   {/* Processing Options */}
                   <div className="space-y-3">
                     <Label className="text-base">Processing Options</Label>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="extraction_backend">Extraction Backend</Label>
+                      <Select
+                        value={processingOptions.extraction_backend}
+                        onValueChange={(value) =>
+                          setProcessingOptions({ ...processingOptions, extraction_backend: value })
+                        }
+                      >
+                        <SelectTrigger id="extraction_backend">
+                          <SelectValue placeholder="Select extraction backend" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt">GPT (vision)</SelectItem>
+                          <SelectItem value="content_understanding">Content Understanding</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex items-start space-x-3">
@@ -595,6 +661,25 @@ export default function ProcessFilesPage() {
                           </Label>
                           <p className="text-xs text-muted-foreground">
                             Validate extracted data
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start space-x-3">
+                        <Checkbox
+                          id="enable_preprocessing"
+                          checked={processingOptions.enable_preprocessing}
+                          onCheckedChange={(checked) =>
+                            setProcessingOptions({ ...processingOptions, enable_preprocessing: !!checked })
+                          }
+                        />
+                        <div className="space-y-1">
+                          <Label htmlFor="enable_preprocessing" className="flex items-center gap-2 cursor-pointer">
+                            <Sparkles className="h-4 w-4" />
+                            Image Preprocessing
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            Improve image quality before extraction
                           </p>
                         </div>
                       </div>

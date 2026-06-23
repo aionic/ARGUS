@@ -509,6 +509,8 @@ def get_summary_with_gpt(mkd_output_json, cosmos_config_container=None) -> Any:
     """
     messages = [user_message([text_content(json.dumps(mkd_output_json))])]
 
-    result = run_chat_sync(messages, instructions=reasoning_prompt, seed=0)
+    # Route the (text-only) summary to a cheaper deployment when configured.
+    summary_model = get_config(cosmos_config_container).get("summary_model_deployment")
+    result = run_chat_sync(messages, instructions=reasoning_prompt, seed=0, model=summary_model)
 
     return _Message(result.text)

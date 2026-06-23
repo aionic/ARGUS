@@ -67,6 +67,10 @@ export interface ProcessingOptions {
   include_images?: boolean
   enable_summary?: boolean
   enable_evaluation?: boolean
+  extraction_backend?: string
+  enable_preprocessing?: boolean
+  enable_enhancement?: boolean
+  skip_if_still_bad?: boolean
   ocr_provider?: "azure" | "mistral"
 }
 

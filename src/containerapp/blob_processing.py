@@ -4,6 +4,7 @@ Blob processing functionality for ARGUS Container App
 
 import asyncio
 import copy
+import json
 import logging
 import os
 import shutil
@@ -24,6 +25,7 @@ from dependencies import (
 from models import BlobInputStream
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "functionapp"))
+from ai_ocr.azure.content_understanding import get_cu_extraction
 from ai_ocr.model import Config
 from ai_ocr.process import (
     fetch_model_prompt_and_schema,
@@ -329,68 +331,147 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             file_paths = [temp_file_path]
             logger.info(f"Processing single file with {num_pages} pages (no chunking needed)")
 
-        # Step 1: Run OCR for all files (conditional - only if OCR text will be used)
-        ocr_results = []
-        total_ocr_time = 0
+        # Determine extraction backend: per-dataset override, else solution default.
+        extraction_backend = (
+            processing_options.get("extraction_backend") or os.getenv("EXTRACTION_BACKEND", "gpt")
+        ).lower()
 
-        if processing_options.get("include_ocr", True):
-            logger.info(f"Starting OCR processing for {len(file_paths)} chunks")
+        # Evaluation defaults off for Content Understanding (it returns its own
+        # confidence), on for the GPT backend. A per-dataset value always wins.
+        default_eval = extraction_backend != "content_understanding"
+        enable_evaluation = processing_options.get("enable_evaluation", default_eval)
+
+        # Per-dataset image quality preprocessing options (OpenCV enhance_retry).
+        quality_options = {
+            "enable_preprocessing": processing_options.get(
+                "enable_preprocessing", os.getenv("ENABLE_IMAGE_PREPROCESSING", "false").lower() == "true"
+            ),
+            "enable_enhancement": processing_options.get("enable_enhancement", True),
+            "skip_if_still_bad": processing_options.get("skip_if_still_bad", False),
+            "thresholds": processing_options.get("quality_thresholds"),
+        }
+
+        extracted_data_list = []
+        image_cache = {}
+        image_quality_reports = []
+
+        if extraction_backend == "content_understanding":
+            # Content Understanding full-analyzer: OCR + field extraction in one call.
+            logger.info(f"Using Content Understanding extraction backend for {len(file_paths)} chunks")
+            ocr_results = []
+            total_ocr_time = 0
+            total_extraction_time = 0
+            cu_confidence = {}
+            example_schema = document["model_input"]["example_schema"]
+            dataset_name = document.get("dataset", "default")
+            try:
+                schema_obj = example_schema if isinstance(example_schema, dict) else json.loads(example_schema)
+            except (TypeError, ValueError):
+                schema_obj = {}
+
             for i, file_path in enumerate(file_paths):
-                logger.info(f"Processing OCR for chunk {i + 1}/{len(file_paths)}")
-                ocr_result, ocr_time = run_ocr_processing(file_path, document, data_container, None, update_state=False)
-                ocr_results.append(ocr_result)
-                total_ocr_time += ocr_time
+                logger.info(f"Content Understanding analysis for chunk {i + 1}/{len(file_paths)}")
+                cu_start = datetime.now()
+                cu_result = get_cu_extraction(file_path, schema_obj, dataset_name, None)
+                cu_time = (datetime.now() - cu_start).total_seconds()
+
+                ocr_results.append(cu_result.get("ocr_output", ""))
+                extracted_data_list.append(cu_result.get("extracted_data", {}))
+                if cu_result.get("confidence"):
+                    cu_confidence[f"chunk_{i + 1}"] = cu_result["confidence"]
+                total_ocr_time += cu_time
+                total_extraction_time += cu_time
+
+                # Prepare images only when needed downstream (evaluation uses vision).
+                if enable_evaluation:
+                    temp_dir, imgs, reports = prepare_images(file_path, Config(), quality_options)
+                    temp_dirs.append(temp_dir)
+                    image_cache[i] = imgs
+                    image_quality_reports.extend(reports)
+                else:
+                    image_cache[i] = []
 
             processing_times["ocr_processing_time"] = total_ocr_time
-            document["extracted_data"]["ocr_output"] = "\n".join(str(result) for result in ocr_results)
+            processing_times["gpt_extraction_time"] = total_extraction_time
+            document["extracted_data"]["ocr_output"] = "\n".join(str(r) for r in ocr_results)
+            document["properties"]["extraction_backend_used"] = "content_understanding"
+            if cu_confidence:
+                document["properties"]["content_understanding_confidence"] = cu_confidence
             update_state(document, data_container, "ocr_completed", True, total_ocr_time)
             data_container.upsert_item(document)
-            logger.info(f"Completed OCR processing for all chunks in {total_ocr_time:.2f}s")
         else:
-            logger.info("Skipping OCR processing (OCR text not needed for GPT extraction)")
-            ocr_results = [""] * len(file_paths)
-            processing_times["ocr_processing_time"] = 0
-            document["extracted_data"]["ocr_output"] = ""
-            update_state(document, data_container, "ocr_skipped", True, 0)
-            data_container.upsert_item(document)
+            # ── GPT extraction backend (default) ──────────────────────────────
+            document["properties"]["extraction_backend_used"] = "gpt"
 
-        # Step 2: GPT extraction
-        logger.info(f"Starting GPT extraction for {len(file_paths)} chunks")
-        extracted_data_list = []
-        total_extraction_time = 0
-        image_cache = {}
+            # Step 1: Run OCR for all files (conditional - only if OCR text will be used)
+            ocr_results = []
+            total_ocr_time = 0
 
-        for i, file_path in enumerate(file_paths):
-            logger.info(f"Processing GPT extraction for chunk {i + 1}/{len(file_paths)}")
+            if processing_options.get("include_ocr", True):
+                logger.info(f"Starting OCR processing for {len(file_paths)} chunks")
+                for i, file_path in enumerate(file_paths):
+                    logger.info(f"Processing OCR for chunk {i + 1}/{len(file_paths)}")
+                    ocr_result, ocr_time = run_ocr_processing(
+                        file_path, document, data_container, None, update_state=False
+                    )
+                    ocr_results.append(ocr_result)
+                    total_ocr_time += ocr_time
 
-            if processing_options.get("include_images", True):
-                temp_dir, imgs = prepare_images(file_path, Config())
-                temp_dirs.append(temp_dir)
-                image_cache[i] = imgs
+                processing_times["ocr_processing_time"] = total_ocr_time
+                document["extracted_data"]["ocr_output"] = "\n".join(str(result) for result in ocr_results)
+                update_state(document, data_container, "ocr_completed", True, total_ocr_time)
+                data_container.upsert_item(document)
+                logger.info(f"Completed OCR processing for all chunks in {total_ocr_time:.2f}s")
             else:
-                imgs = []
-                image_cache[i] = []
+                logger.info("Skipping OCR processing (OCR text not needed for GPT extraction)")
+                ocr_results = [""] * len(file_paths)
+                processing_times["ocr_processing_time"] = 0
+                document["extracted_data"]["ocr_output"] = ""
+                update_state(document, data_container, "ocr_skipped", True, 0)
+                data_container.upsert_item(document)
 
-            ocr_text_for_extraction = ocr_results[i] if processing_options.get("include_ocr", True) else ""
+            # Step 2: GPT extraction
+            logger.info(f"Starting GPT extraction for {len(file_paths)} chunks")
+            total_extraction_time = 0
 
-            if not ocr_text_for_extraction and not imgs:
-                logger.error("No input provided to GPT extraction - both OCR text and images are empty!")
-                raise ValueError("Cannot perform GPT extraction without either OCR text or images")
+            for i, file_path in enumerate(file_paths):
+                logger.info(f"Processing GPT extraction for chunk {i + 1}/{len(file_paths)}")
 
-            extracted_data, extraction_time = run_gpt_extraction(
-                ocr_text_for_extraction,
-                document["model_input"]["model_prompt"],
-                document["model_input"]["example_schema"],
-                imgs,
-                document,
-                data_container,
-                None,
-                update_state=False,
-            )
-            extracted_data_list.append(extracted_data)
-            total_extraction_time += extraction_time
+                if processing_options.get("include_images", True):
+                    temp_dir, imgs, reports = prepare_images(file_path, Config(), quality_options)
+                    temp_dirs.append(temp_dir)
+                    image_cache[i] = imgs
+                    image_quality_reports.extend(reports)
+                else:
+                    imgs = []
+                    image_cache[i] = []
 
-        processing_times["gpt_extraction_time"] = total_extraction_time
+                ocr_text_for_extraction = ocr_results[i] if processing_options.get("include_ocr", True) else ""
+
+                if not ocr_text_for_extraction and not imgs:
+                    logger.error("No input provided to GPT extraction - both OCR text and images are empty!")
+                    raise ValueError("Cannot perform GPT extraction without either OCR text or images")
+
+                extracted_data, extraction_time = run_gpt_extraction(
+                    ocr_text_for_extraction,
+                    document["model_input"]["model_prompt"],
+                    document["model_input"]["example_schema"],
+                    imgs,
+                    document,
+                    data_container,
+                    None,
+                    update_state=False,
+                )
+                extracted_data_list.append(extracted_data)
+                total_extraction_time += extraction_time
+
+            processing_times["gpt_extraction_time"] = total_extraction_time
+
+        # Store any per-page image-quality metrics gathered during image prep.
+        if image_quality_reports:
+            document["properties"]["image_quality"] = image_quality_reports
+            if any(r.get("flagged_low_quality") for r in image_quality_reports):
+                document["properties"]["image_quality_warning"] = True
 
         # Create page range structure instead of merging
         if len(extracted_data_list) > 1:
@@ -404,7 +485,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
 
         # Step 3: GPT evaluation (conditional)
         total_evaluation_time = 0
-        if processing_options.get("enable_evaluation", True):
+        if enable_evaluation:
             logger.info(f"Starting GPT evaluation for {len(file_paths)} chunks")
             evaluation_results = []
             for i, file_path in enumerate(file_paths):
@@ -489,7 +570,9 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
         if "gpt_extraction_time" not in processing_times:
             update_state(document, data_container, "gpt_extraction_completed", False)
         if processing_options.get("enable_evaluation", True) and "gpt_evaluation_time" not in processing_times:
-            update_state(document, data_container, "gpt_evaluation_completed", False)
+            # Only flag evaluation as failed when it was actually expected to run.
+            if locals().get("enable_evaluation", True):
+                update_state(document, data_container, "gpt_evaluation_completed", False)
         if processing_options.get("enable_summary", True) and summary_time == 0:
             update_state(document, data_container, "gpt_summary_completed", False)
 

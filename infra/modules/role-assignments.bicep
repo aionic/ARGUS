@@ -72,6 +72,17 @@ resource aiServicesUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
+// ─── Cognitive Services User for AI Services (Content Understanding data-plane) ───
+resource aiServicesCogUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(userManagedIdentityPrincipalId, aiServicesId, 'CognitiveServicesUser')
+  scope: aiServicesResource
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')
+    principalId: userManagedIdentityPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // ─── Azure AI User on the Foundry project (data-plane agent access) ───
 resource foundryProjectUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(userManagedIdentityPrincipalId, foundryProject.id, 'AzureAIUser')
@@ -151,6 +162,16 @@ resource userAiServicesRole 'Microsoft.Authorization/roleAssignments@2022-04-01'
   properties: {
     principalId: azurePrincipalId
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+
+// User dev access: Cognitive Services User on AI Services (Content Understanding data-plane)
+resource userAiServicesCogUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiServicesId, azurePrincipalId, 'CognitiveServicesUser')
+  scope: aiServicesResource
+  properties: {
+    principalId: azurePrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')
   }
 }
 

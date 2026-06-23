@@ -16,6 +16,22 @@ param containerRegistryName string = 'cr${resourceToken}'
 param documentIntelligenceName string = 'di${resourceToken}'
 param azureOpenaiModelDeploymentName string
 
+@description('Default extraction backend: gpt | content_understanding (per-dataset override available)')
+@allowed([
+  'gpt'
+  'content_understanding'
+])
+param extractionBackend string = 'gpt'
+
+@description('Enable OpenCV image quality preprocessing/enhancement by default')
+param enableImagePreprocessing bool = false
+
+@description('Deploy a cheaper OpenAI model for the summary stage cost experiment')
+param deploySummaryModel bool = true
+
+@description('Experiment: deploy a Phi serverless model (verify regional availability first)')
+param deployPhiModel bool = false
+
 @description('Principal ID of the running user for role assignments')
 param azurePrincipalId string
 
@@ -135,6 +151,8 @@ module aiServices 'modules/ai-services.bicep' = {
     privateDnsZoneOpenAIId: network.outputs.privateDnsZoneOpenAIId
     privateDnsZoneCognitiveServicesId: network.outputs.privateDnsZoneCognitiveServicesId
     privateDnsZoneAIServicesId: network.outputs.privateDnsZoneAIServicesId
+    deploySummaryModel: deploySummaryModel
+    deployPhiModel: deployPhiModel
   }
 }
 
@@ -179,6 +197,10 @@ module containerApps 'modules/container-apps.bicep' = {
     aiServicesEndpoint: aiServices.outputs.aiServicesEndpoint
     foundryProjectEndpoint: aiServices.outputs.foundryProjectEndpoint
     azureOpenaiModelDeploymentName: azureOpenaiModelDeploymentName
+    contentUnderstandingEndpoint: aiServices.outputs.aiServicesEndpoint
+    extractionBackend: extractionBackend
+    enableImagePreprocessing: enableImagePreprocessing
+    summaryModelDeploymentName: aiServices.outputs.summaryModelDeploymentName
     keyVaultUri: keyVault.outputs.keyVaultUri
     apiKeySecretUri: keyVault.outputs.apiKeySecretUri
     containerAppsSubnetId: network.outputs.containerAppsSubnetId

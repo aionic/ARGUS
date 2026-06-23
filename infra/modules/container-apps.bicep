@@ -38,6 +38,16 @@ param aiServicesEndpoint string
 param foundryProjectEndpoint string
 param azureOpenaiModelDeploymentName string
 
+// Content Understanding + cost/preprocessing features
+param contentUnderstandingEndpoint string = ''
+@allowed([
+  'gpt'
+  'content_understanding'
+])
+param extractionBackend string = 'gpt'
+param enableImagePreprocessing bool = false
+param summaryModelDeploymentName string = ''
+
 // Key Vault
 param keyVaultUri string
 
@@ -124,6 +134,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_ENDPOINT', value: aiServicesEndpoint }
             { name: 'AZURE_AI_PROJECT_ENDPOINT', value: foundryProjectEndpoint }
             { name: 'AZURE_OPENAI_MODEL_DEPLOYMENT_NAME', value: azureOpenaiModelDeploymentName }
+            // Content Understanding extraction backend
+            { name: 'AZURE_CONTENT_UNDERSTANDING_ENDPOINT', value: contentUnderstandingEndpoint }
+            { name: 'EXTRACTION_BACKEND', value: extractionBackend }
+            // Image quality preprocessing (OpenCV enhance_retry)
+            { name: 'ENABLE_IMAGE_PREPROCESSING', value: toLower(string(enableImagePreprocessing)) }
+            // Cost-effective summary model (empty = use main deployment)
+            { name: 'SUMMARY_MODEL_DEPLOYMENT_NAME', value: summaryModelDeploymentName }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: applicationInsightsConnectionString }
             { name: 'AZURE_CLIENT_ID', value: userManagedIdentityClientId }
             { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }

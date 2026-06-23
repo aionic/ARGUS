@@ -107,10 +107,13 @@ def _get_loop() -> _LoopThread:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Credential + chat client (created once, on the background loop)
+# Credential + chat clients (cached per model deployment, on the background loop)
 # ─────────────────────────────────────────────────────────────────────────────
 _credential = None
-_client = None
+# One chat client per model-deployment name. Keyed by the resolved deployment
+# name so callers can route specific stages (e.g. the summary) to a cheaper
+# model without rebuilding clients on every call.
+_clients: dict[str, Any] = {}
 _client_lock = asyncio.Lock()
 
 
@@ -125,30 +128,37 @@ def _get_credential():
     return _credential
 
 
-async def _get_client():
-    """Build (and cache) the Agent Framework chat client.
+async def _get_client(model: Optional[str] = None):
+    """Build (and cache) an Agent Framework chat client for ``model``.
+
+    ``model`` is a model-deployment name. When ``None`` the default deployment
+    (``AZURE_OPENAI_MODEL_DEPLOYMENT_NAME``) is used. Clients are cached per
+    deployment so different pipeline stages can target different models.
 
     Prefers Azure AI Foundry (project endpoint); falls back to Azure OpenAI.
     """
-    global _client
-    if _client is not None:
-        return _client
+    resolved_model = model or os.getenv("AZURE_OPENAI_MODEL_DEPLOYMENT_NAME")
+    cache_key = resolved_model or "__default__"
+
+    cached = _clients.get(cache_key)
+    if cached is not None:
+        return cached
 
     async with _client_lock:
-        if _client is not None:
-            return _client
+        cached = _clients.get(cache_key)
+        if cached is not None:
+            return cached
 
         credential = _get_credential()
-        model = os.getenv("AZURE_OPENAI_MODEL_DEPLOYMENT_NAME")
         project_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
 
         if project_endpoint:
             from agent_framework_foundry import FoundryChatClient
 
-            logger.info("Agent Framework: using Azure AI Foundry project endpoint")
-            _client = FoundryChatClient(
+            logger.info("Agent Framework: using Azure AI Foundry project endpoint (model=%s)", resolved_model)
+            client = FoundryChatClient(
                 project_endpoint=project_endpoint,
-                model=model,
+                model=resolved_model,
                 credential=credential,
             )
         else:
@@ -156,15 +166,20 @@ async def _get_client():
 
             azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
             api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
-            logger.info("Agent Framework: no Foundry project set, falling back to Azure OpenAI endpoint")
-            _client = OpenAIChatClient(
-                model=model,
+            logger.info(
+                "Agent Framework: no Foundry project set, falling back to Azure OpenAI endpoint (model=%s)",
+                resolved_model,
+            )
+            client = OpenAIChatClient(
+                model=resolved_model,
                 azure_endpoint=azure_endpoint,
                 api_version=api_version,
                 credential=credential,
             )
 
-    return _client
+        _clients[cache_key] = client
+
+    return client
 
 
 def _extract_finish_reason(response: Any) -> Optional[str]:
@@ -195,8 +210,9 @@ async def _arun_chat(
     seed: Optional[int],
     temperature: Optional[float],
     max_tokens: Optional[int],
+    model: Optional[str] = None,
 ) -> ChatResult:
-    client = await _get_client()
+    client = await _get_client(model)
     agent = Agent(client=client, instructions=instructions, tools=tools)
 
     opts: dict[str, Any] = {}
@@ -228,8 +244,13 @@ def run_chat_sync(
     seed: Optional[int] = None,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
+    model: Optional[str] = None,
 ) -> ChatResult:
-    """Run an Agent Framework chat turn synchronously (safe from worker threads)."""
+    """Run an Agent Framework chat turn synchronously (safe from worker threads).
+
+    ``model`` optionally overrides the model deployment for this call (e.g. to
+    route the summary stage to a cheaper deployment); ``None`` uses the default.
+    """
     return _get_loop().run(
         _arun_chat(
             messages,
@@ -239,6 +260,7 @@ def run_chat_sync(
             seed=seed,
             temperature=temperature,
             max_tokens=max_tokens,
+            model=model,
         )
     )
 
@@ -252,6 +274,7 @@ async def run_chat(
     seed: Optional[int] = None,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
+    model: Optional[str] = None,
 ) -> ChatResult:
     """Async wrapper for use inside FastAPI handlers without blocking the loop."""
     return await asyncio.to_thread(
@@ -263,4 +286,5 @@ async def run_chat(
         seed=seed,
         temperature=temperature,
         max_tokens=max_tokens,
+        model=model,
     )

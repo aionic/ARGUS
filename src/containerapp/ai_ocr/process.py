@@ -663,18 +663,64 @@ def run_gpt_summary(
         raise e
 
 
-def prepare_images(file_to_ocr: str, config: Config = Config()) -> tuple[str, list]:
+def prepare_images(
+    file_to_ocr: str, config: Config = Config(), quality_options: dict | None = None
+) -> tuple[str, list, list]:
     """
     Prepare images from PDF file for processing.
-    Returns temporary directory path and processed images.
+
+    Returns (temp_dir, base64_images, quality_reports). When ``quality_options``
+    enables preprocessing, each page is assessed for quality and (optionally)
+    enhanced (deskew/denoise/CLAHE) before encoding; per-page metrics are
+    returned in ``quality_reports`` for storage on the document.
     """
     temp_dir = convert_pdf_into_image(file_to_ocr)
-    imgs = glob.glob(os.path.join(temp_dir, "page*.png"))[: config.max_images]
-    imgs = [load_image(img) for img in imgs]
+    img_paths = sorted(glob.glob(os.path.join(temp_dir, "page*.png")))[: config.max_images]
+
+    quality_reports: list = []
+    final_paths: list[str] = []
+
+    if quality_options and quality_options.get("enable_preprocessing", False):
+        from ai_ocr.preprocessing.quality import QualityThresholds, assess_and_enhance
+
+        thresholds = QualityThresholds.from_dict(quality_options.get("thresholds"))
+        enable_enhancement = quality_options.get("enable_enhancement", True)
+        skip_if_still_bad = quality_options.get("skip_if_still_bad", False)
+
+        for p in img_paths:
+            try:
+                chosen_path, report_before, report_after = assess_and_enhance(
+                    p, thresholds=thresholds, enable_enhancement=enable_enhancement
+                )
+            except Exception as e:  # noqa: BLE001 - never fail the pipeline on quality checks
+                logging.warning(f"Image quality preprocessing failed for {p}: {e}")
+                final_paths.append(p)
+                continue
+
+            final_report = report_after or report_before
+            quality_reports.append(
+                {
+                    "page": os.path.basename(p),
+                    "before": report_before.to_dict(),
+                    "after": report_after.to_dict() if report_after else None,
+                    "enhanced": chosen_path != p,
+                    "flagged_low_quality": final_report.is_low_quality,
+                    "reasons": final_report.reasons,
+                }
+            )
+
+            if skip_if_still_bad and final_report.is_low_quality:
+                logging.info(f"Skipping low-quality page to save tokens: {os.path.basename(p)}")
+                continue
+            final_paths.append(chosen_path)
+    else:
+        final_paths = img_paths
+
+    imgs = [load_image(img) for img in final_paths]
 
     # Limit images size
     max_size = config.gpt_vision_limit_mb * 1024 * 1024
     while get_size_of_base64_images(imgs) > max_size:
         imgs.pop()
 
-    return temp_dir, imgs
+    return temp_dir, imgs, quality_reports
