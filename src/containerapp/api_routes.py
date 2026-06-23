@@ -763,18 +763,31 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
             if not data_container:
                 return {"error": "Data container not available"}
 
-            query = "SELECT c.id, c.file_name, c.partitionKey, c.properties.status, c.properties.timestamp FROM c"
-            conditions = []
             if dataset:
-                conditions.append(f"c.partitionKey = '{dataset}'")
-            if status:
-                conditions.append(f"c.properties.status = '{status}'")
-            if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-            query += f" ORDER BY c.properties.timestamp DESC OFFSET 0 LIMIT {limit}"
+                query = f"SELECT * FROM c WHERE c.dataset = '{dataset}'"
+            else:
+                query = "SELECT * FROM c"
 
             items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
-            return {"documents": items, "count": len(items)}
+
+            documents = []
+            for item in items:
+                doc_status = _get_document_status(item)
+                if status and doc_status != status:
+                    continue
+                documents.append(
+                    {
+                        "id": item.get("id"),
+                        "filename": item.get("file_name") or item.get("filename") or item.get("id", "").split("/")[-1],
+                        "dataset": item.get("dataset", "default-dataset"),
+                        "status": doc_status,
+                        "created_at": item.get("request_timestamp") or item.get("created_at"),
+                    }
+                )
+
+            documents.sort(key=lambda d: d.get("created_at") or "", reverse=True)
+            documents = documents[:limit]
+            return {"documents": documents, "count": len(documents)}
 
         elif tool_name == "argus_get_document":
             document_id = arguments.get("document_id")
@@ -793,13 +806,13 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
             doc = items[0]
             return {
                 "id": doc.get("id"),
-                "filename": doc.get("file_name"),
-                "dataset": doc.get("partitionKey"),
-                "status": doc.get("properties", {}).get("status"),
+                "filename": doc.get("file_name") or doc.get("filename"),
+                "dataset": doc.get("dataset", "default-dataset"),
+                "status": _get_document_status(doc),
                 "ocr_text": doc.get("extracted_data", {}).get("ocr_output", "")[:2000],
                 "extraction": doc.get("extracted_data", {}).get("gpt_extraction_output"),
-                "summary": doc.get("extracted_data", {}).get("gpt_summary"),
-                "evaluation": doc.get("extracted_data", {}).get("evaluation"),
+                "summary": doc.get("extracted_data", {}).get("gpt_summary_output"),
+                "evaluation": doc.get("extracted_data", {}).get("gpt_extraction_output_with_evaluation"),
             }
 
         elif tool_name == "argus_chat_with_document":
@@ -821,9 +834,12 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
             if not conf_container:
                 return {"error": "Configuration container not available"}
 
-            query = "SELECT DISTINCT c.partitionKey FROM c"
-            items = list(conf_container.query_items(query=query, enable_cross_partition_query=True))
-            datasets = [item.get("partitionKey") for item in items if item.get("partitionKey")]
+            datasets = set()
+            try:
+                config_item = conf_container.read_item(item="configuration", partition_key="configuration")
+                datasets.update((config_item.get("datasets") or {}).keys())
+            except Exception as e:
+                logger.warning(f"Could not read configuration datasets: {e}")
 
             # Also check blob storage for datasets
             if blob_service_client:
@@ -835,9 +851,9 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
                     parts = blob.name.split("/")
                     if len(parts) > 1:
                         blob_datasets.add(parts[0])
-                datasets = list(set(datasets) | blob_datasets)
+                datasets = datasets | blob_datasets
 
-            return {"datasets": datasets}
+            return {"datasets": sorted(datasets)}
 
         elif tool_name == "argus_get_dataset_config":
             dataset_name = arguments.get("dataset_name")
@@ -860,13 +876,25 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
                 return {"error": "Data container not available"}
 
             # Search by filename (Cosmos DB doesn't support full-text search easily)
-            cosmos_query = f"SELECT c.id, c.file_name, c.partitionKey, c.properties.status FROM c WHERE CONTAINS(LOWER(c.file_name), LOWER('{query_text}'))"
+            cosmos_query = (
+                "SELECT c.id, c.file_name, c.dataset, c.state FROM c "
+                f"WHERE CONTAINS(LOWER(c.file_name), LOWER('{query_text}'))"
+            )
             if dataset:
-                cosmos_query += f" AND c.partitionKey = '{dataset}'"
+                cosmos_query += f" AND c.dataset = '{dataset}'"
             cosmos_query += f" OFFSET 0 LIMIT {limit}"
 
             items = list(data_container.query_items(query=cosmos_query, enable_cross_partition_query=True))
-            return {"results": items, "count": len(items), "query": query_text}
+            results = [
+                {
+                    "id": item.get("id"),
+                    "filename": item.get("file_name"),
+                    "dataset": item.get("dataset", "default-dataset"),
+                    "status": _get_document_status(item),
+                }
+                for item in items
+            ]
+            return {"results": results, "count": len(results), "query": query_text}
 
         elif tool_name == "argus_get_extraction":
             document_id = arguments.get("document_id")
