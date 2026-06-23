@@ -18,7 +18,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Sequence
 
-from agent_framework import Agent, ChatOptions, Content, Message, Role
+from agent_framework import Agent, ChatOptions, Content, Message
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +49,11 @@ def image_content(b64_png: str) -> Content:
 
 
 def user_message(contents: Sequence[Content]) -> Message:
-    return Message(Role.USER, list(contents))
+    return Message("user", list(contents))
 
 
 def assistant_message(contents: Sequence[Content]) -> Message:
-    return Message(Role.ASSISTANT, list(contents))
+    return Message("assistant", list(contents))
 
 
 def _extract_tool_calls(response: Any) -> list:

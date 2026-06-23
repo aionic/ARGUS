@@ -36,10 +36,14 @@ def create_blob_input_stream(blob_url: str) -> BlobInputStream:
     try:
         # Parse blob URL to get container and blob name
         # Format: https://accountname.blob.core.windows.net/container/blob
+        # URL path segments are percent-encoded (e.g. spaces -> %20); decode the
+        # blob name so it matches the actual stored blob (and the upload-side
+        # document id, which is built from the raw, un-encoded path).
+        from urllib.parse import unquote
         url_parts = blob_url.replace('https://', '').split('/')
         account_name = url_parts[0].split('.')[0]
-        container_name = url_parts[1]
-        blob_name = '/'.join(url_parts[2:])
+        container_name = unquote(url_parts[1])
+        blob_name = unquote('/'.join(url_parts[2:]))
         
         # Get blob client
         blob_service_client = get_blob_service_client()
