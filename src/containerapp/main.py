@@ -2,28 +2,49 @@
 ARGUS Container App - Main FastAPI Application
 Reorganized modular structure for better maintainability
 """
+
 import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.types import Receive, Scope, Send
 
-from dependencies import initialize_azure_clients, cleanup_azure_clients
 import api_routes
+from dependencies import cleanup_azure_clients, initialize_azure_clients
 from mcp_server import mcp_server
-from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-# Configure logging
+# Configure logging. App level defaults to INFO (override via LOG_LEVEL); the
+# Azure SDKs log full HTTP request/response headers at INFO, which floods the
+# Container App logs, so they are pinned to WARNING (override via
+# AZURE_LOG_LEVEL) to keep application logs readable.
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+_AZURE_LOG_LEVEL = os.getenv("AZURE_LOG_LEVEL", "WARNING").upper()
+
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=getattr(logging, _LOG_LEVEL, logging.INFO), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+
+for _noisy_logger in (
+    "azure",
+    "azure.core.pipeline.policies.http_logging_policy",
+    "azure.identity",
+    "azure.cosmos",
+    "azure.storage",
+    "azure.servicebus",
+    "uvicorn.access",
+    "httpx",
+    "httpcore",
+    "urllib3",
+):
+    logging.getLogger(_noisy_logger).setLevel(getattr(logging, _AZURE_LOG_LEVEL, logging.WARNING))
+
 logger = logging.getLogger(__name__)
 
-MAX_TIMEOUT = 45*60  # Set timeout duration in seconds
+MAX_TIMEOUT = 45 * 60  # Set timeout duration in seconds
 
 # Create the StreamableHTTP session manager (created here so it's available for lifespan)
 mcp_session_manager: StreamableHTTPSessionManager | None = None
@@ -33,14 +54,14 @@ mcp_session_manager: StreamableHTTPSessionManager | None = None
 async def lifespan(_app: FastAPI):  # noqa: ARG001
     """Initialize Azure clients and MCP session manager on startup"""
     global mcp_session_manager  # noqa: PLW0603
-    
+
     try:
         await initialize_azure_clients()
         logger.info("Successfully initialized Azure clients")
     except Exception as e:
         logger.error("Failed to initialize Azure clients: %s", e)
         raise
-    
+
     # Initialize MCP session manager
     mcp_session_manager = StreamableHTTPSessionManager(
         app=mcp_server,
@@ -48,12 +69,12 @@ async def lifespan(_app: FastAPI):  # noqa: ARG001
         json_response=True,  # Use JSON responses for better compatibility
         stateless=True,  # Stateless mode for scalability
     )
-    
+
     # Run MCP session manager
     async with mcp_session_manager.run():
         logger.info("MCP Streamable HTTP session manager started")
         yield
-    
+
     # Cleanup
     await cleanup_azure_clients()
     logger.info("Application shutdown complete")
@@ -64,7 +85,7 @@ app = FastAPI(
     title="ARGUS Backend",
     description="Document processing backend using Azure AI services",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS middleware - Allow frontend origins
@@ -268,76 +289,42 @@ async def get_upload_url(filename: str, dataset: str = "default-dataset"):
 # MCP (Model Context Protocol) Endpoints - Streamable HTTP Transport
 # ============================================================================
 
+
 @app.get("/mcp/info")
 async def mcp_info(request: Request):
     """
     Get information about the ARGUS MCP server.
-    
+
     Returns available tools and connection instructions.
     """
     # Dynamically construct the MCP URL from the current request
-    base_url = str(request.base_url).rstrip('/')
+    base_url = str(request.base_url).rstrip("/")
     mcp_url = f"{base_url}/mcp"
-    
+
     return {
         "name": "argus",
         "description": "ARGUS Document Intelligence MCP Server",
         "version": "1.0.0",
         "transport": "streamable-http",
-        "endpoints": {
-            "mcp": "/mcp"
-        },
+        "endpoints": {"mcp": "/mcp"},
         "tools": [
-            {
-                "name": "argus_list_documents",
-                "description": "List all processed documents"
-            },
-            {
-                "name": "argus_get_document", 
-                "description": "Get detailed document information"
-            },
-            {
-                "name": "argus_chat_with_document",
-                "description": "Ask questions about a document"
-            },
-            {
-                "name": "argus_list_datasets",
-                "description": "List available dataset configurations"
-            },
-            {
-                "name": "argus_get_dataset_config",
-                "description": "Get dataset configuration details"
-            },
-            {
-                "name": "argus_process_document_url",
-                "description": "Queue document for processing"
-            },
-            {
-                "name": "argus_get_extraction",
-                "description": "Get extracted data from document"
-            },
-            {
-                "name": "argus_search_documents",
-                "description": "Search documents by keyword"
-            },
-            {
-                "name": "argus_get_upload_url",
-                "description": "Get a pre-signed SAS URL for direct blob upload"
-            },
-            {
-                "name": "argus_create_dataset",
-                "description": "Create a new dataset configuration"
-            }
+            {"name": "argus_list_documents", "description": "List all processed documents"},
+            {"name": "argus_get_document", "description": "Get detailed document information"},
+            {"name": "argus_chat_with_document", "description": "Ask questions about a document"},
+            {"name": "argus_list_datasets", "description": "List available dataset configurations"},
+            {"name": "argus_get_dataset_config", "description": "Get dataset configuration details"},
+            {"name": "argus_process_document_url", "description": "Queue document for processing"},
+            {"name": "argus_get_extraction", "description": "Get extracted data from document"},
+            {"name": "argus_search_documents", "description": "Search documents by keyword"},
+            {"name": "argus_get_upload_url", "description": "Get a pre-signed SAS URL for direct blob upload"},
+            {"name": "argus_create_dataset", "description": "Create a new dataset configuration"},
         ],
         "configuration_example": {
             "mcpServers": {
-                "argus": {
-                    "url": mcp_url,
-                    **({"headers": {"X-API-Key": "<your-api-key>"}} if API_KEY else {})
-                }
+                "argus": {"url": mcp_url, **({"headers": {"X-API-Key": "<your-api-key>"}} if API_KEY else {})}
             }
         },
-        "auth_required": bool(API_KEY)
+        "auth_required": bool(API_KEY),
     }
 
 
@@ -356,5 +343,5 @@ app.mount("/mcp", handle_mcp_request)
 # Optional: If you want to run this directly
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
+    uvicorn.run(app, host="0.0.0.0", port=8000)

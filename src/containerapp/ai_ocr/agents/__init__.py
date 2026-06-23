@@ -10,12 +10,12 @@ credential — no API keys.
 
 from .client import (
     ChatResult,
+    assistant_message,
+    image_content,
     run_chat,
     run_chat_sync,
-    user_message,
-    assistant_message,
     text_content,
-    image_content,
+    user_message,
 )
 
 __all__ = [

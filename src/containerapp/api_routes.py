@@ -1,30 +1,35 @@
 """
 API route handlers for ARGUS Container App
 """
+
 import asyncio
 import copy
 import json
 import logging
 import os
-import traceback
-from datetime import datetime
-from typing import Dict, Any, Annotated
-
-from fastapi import Request, BackgroundTasks, HTTPException
-from azure.identity import DefaultAzureCredential
-
-from models import EventGridEvent
-from blob_processing import process_blob_event
-from dependencies import (
-    get_blob_service_client, get_data_container, get_conf_container,
-    get_logic_app_manager, set_global_processing_semaphore
-)
 
 # Import processing functions
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'functionapp'))
+import traceback
+from datetime import datetime
+from typing import Annotated, Any, Dict
+
+from azure.identity import DefaultAzureCredential
+from fastapi import BackgroundTasks, HTTPException, Request
+
+from blob_processing import process_blob_event
+from dependencies import (
+    get_blob_service_client,
+    get_conf_container,
+    get_data_container,
+    get_logic_app_manager,
+    set_global_processing_semaphore,
+)
+from models import EventGridEvent
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "functionapp"))
+from ai_ocr.agents import assistant_message, run_chat, text_content, user_message
 from ai_ocr.process import connect_to_cosmos, fetch_model_prompt_and_schema
-from ai_ocr.agents import run_chat, user_message, assistant_message, text_content
 
 logger = logging.getLogger(__name__)
 
@@ -40,27 +45,21 @@ async def health_check():
         blob_service_client = get_blob_service_client()
         data_container = get_data_container()
         conf_container = get_conf_container()
-        
+
         # Check if we can connect to storage
         if blob_service_client:
-            container_client = blob_service_client.get_container_client(os.getenv('CONTAINER_NAME', 'datasets'))
+            container_client = blob_service_client.get_container_client(os.getenv("CONTAINER_NAME", "datasets"))
             container_client.get_container_properties()
-        
+
         # Check if we can connect to Cosmos DB
         if data_container and conf_container:
             # Try to query Cosmos DB
-            list(data_container.query_items(
-                query="SELECT TOP 1 * FROM c",
-                enable_cross_partition_query=True
-            ))
-        
+            list(data_container.query_items(query="SELECT TOP 1 * FROM c", enable_cross_partition_query=True))
+
         return {
             "status": "healthy",
             "timestamp": datetime.utcnow().isoformat(),
-            "services": {
-                "storage": "connected",
-                "cosmos_db": "connected"
-            }
+            "services": {"storage": "connected", "cosmos_db": "connected"},
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -72,37 +71,33 @@ async def handle_blob_created(request: Request, background_tasks: BackgroundTask
     try:
         # Parse the Event Grid request
         request_body = await request.json()
-        
+
         # Handle Event Grid subscription validation
         if isinstance(request_body, list) and len(request_body) > 0:
             event = request_body[0]
-            
+
             # Handle subscription validation
-            if event.get('eventType') == 'Microsoft.EventGrid.SubscriptionValidationEvent':
-                validation_code = event.get('data', {}).get('validationCode')
+            if event.get("eventType") == "Microsoft.EventGrid.SubscriptionValidationEvent":
+                validation_code = event.get("data", {}).get("validationCode")
                 if validation_code:
                     return {"validationResponse": validation_code}
-        
+
         # Process blob created events
         events = request_body if isinstance(request_body, list) else [request_body]
-        
+
         for event_data in events:
             event = EventGridEvent(event_data)
-            
-            if event.event_type == 'Microsoft.Storage.BlobCreated':
-                blob_url = event.data.get('url')
-                if blob_url and '/datasets/' in blob_url:
+
+            if event.event_type == "Microsoft.Storage.BlobCreated":
+                blob_url = event.data.get("url")
+                if blob_url and "/datasets/" in blob_url:
                     logger.info(f"Processing blob created event for: {blob_url}")
-                    
+
                     # Add to background tasks for async processing
-                    background_tasks.add_task(
-                        process_blob_event,
-                        blob_url,
-                        event.data
-                    )
-        
+                    background_tasks.add_task(process_blob_event, blob_url, event.data)
+
         return {"status": "accepted", "message": "Events queued for processing"}
-        
+
     except Exception as e:
         logger.error(f"Error handling blob created event: {e}")
         logger.error(traceback.format_exc())
@@ -113,20 +108,16 @@ async def process_blob_manual(request: Request, background_tasks: BackgroundTask
     """Manually trigger blob processing (for testing)"""
     try:
         request_body = await request.json()
-        blob_url = request_body.get('blob_url')
-        
+        blob_url = request_body.get("blob_url")
+
         if not blob_url:
             raise HTTPException(status_code=400, detail="blob_url is required")
-        
+
         # Add to background tasks
-        background_tasks.add_task(
-            process_blob_event,
-            blob_url,
-            {"url": blob_url}
-        )
-        
+        background_tasks.add_task(process_blob_event, blob_url, {"url": blob_url})
+
         return {"status": "accepted", "message": "Blob queued for processing"}
-        
+
     except Exception as e:
         logger.error(f"Error in manual blob processing: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -138,22 +129,18 @@ async def get_configuration():
         conf_container = get_conf_container()
         if not conf_container:
             raise HTTPException(status_code=503, detail="Configuration container not available")
-        
+
         try:
             # Try to get the main configuration item
-            config_item = conf_container.read_item(item='configuration', partition_key='configuration')
+            config_item = conf_container.read_item(item="configuration", partition_key="configuration")
             # Remove Cosmos DB specific fields
-            clean_config = {k: v for k, v in config_item.items() if not k.startswith('_')}
+            clean_config = {k: v for k, v in config_item.items() if not k.startswith("_")}
             return clean_config
         except Exception as e:
             logger.warning(f"Configuration item not found, returning default: {e}")
             # Return default configuration structure
-            return {
-                "id": "configuration",
-                "partitionKey": "configuration", 
-                "datasets": {}
-            }
-        
+            return {"id": "configuration", "partitionKey": "configuration", "datasets": {}}
+
     except Exception as e:
         logger.error(f"Error fetching configuration: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch configuration")
@@ -165,20 +152,20 @@ async def update_configuration(request: Request):
         conf_container = get_conf_container()
         if not conf_container:
             raise HTTPException(status_code=503, detail="Configuration container not available")
-        
+
         config_data = await request.json()
-        
+
         # Ensure the configuration has required fields
         if "id" not in config_data:
             config_data["id"] = "configuration"
         if "partitionKey" not in config_data:
             config_data["partitionKey"] = "configuration"
-        
+
         # Upsert the single configuration item
         conf_container.upsert_item(config_data)
-        
+
         return {"status": "success", "message": "Configuration updated"}
-        
+
     except Exception as e:
         logger.error(f"Error updating configuration: {e}")
         raise HTTPException(status_code=500, detail="Failed to update configuration")
@@ -190,28 +177,27 @@ async def refresh_configuration():
         conf_container = get_conf_container()
         if not conf_container:
             raise HTTPException(status_code=503, detail="Configuration container not available")
-        
+
         logger.info("Forcing configuration refresh from demo files")
-        
+
         try:
             # This will force reload the configuration from demo files
             prompt, schema, max_pages, options = fetch_model_prompt_and_schema("default-dataset", force_refresh=True)
-            logger.info(f"Configuration refreshed successfully - prompt length: {len(prompt)}, schema size: {len(str(schema))}")
-            
+            logger.info(
+                f"Configuration refreshed successfully - prompt length: {len(prompt)}, schema size: {len(str(schema))}"
+            )
+
             return {
-                "status": "success", 
+                "status": "success",
                 "message": "Configuration refreshed successfully",
                 "prompt_length": len(prompt),
                 "schema_size": len(str(schema)),
-                "schema_empty": not bool(schema)
+                "schema_empty": not bool(schema),
             }
         except Exception as inner_e:
             logger.error(f"Error during configuration refresh: {inner_e}")
-            return {
-                "status": "error",
-                "message": f"Failed to refresh configuration: {str(inner_e)}"
-            }
-        
+            return {"status": "error", "message": f"Failed to refresh configuration: {str(inner_e)}"}
+
     except Exception as e:
         logger.error(f"Error refreshing configuration: {e}")
         raise HTTPException(status_code=500, detail="Failed to refresh configuration")
@@ -223,17 +209,17 @@ async def get_concurrency_settings():
         logic_app_manager = get_logic_app_manager()
         if not logic_app_manager:
             raise HTTPException(status_code=503, detail="Logic App Manager not initialized")
-        
+
         settings = await logic_app_manager.get_concurrency_settings()
-        
+
         if "error" in settings:
             if not settings.get("enabled", False):
                 raise HTTPException(status_code=503, detail=settings["error"])
             else:
                 raise HTTPException(status_code=500, detail=settings["error"])
-        
+
         return settings
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -247,33 +233,33 @@ async def update_concurrency_settings(request: Request):
         logic_app_manager = get_logic_app_manager()
         if not logic_app_manager:
             raise HTTPException(status_code=503, detail="Logic App Manager not initialized")
-        
+
         request_body = await request.json()
-        max_runs = request_body.get('max_runs')
-        
+        max_runs = request_body.get("max_runs")
+
         if max_runs is None:
             raise HTTPException(status_code=400, detail="max_runs is required")
-        
+
         if not isinstance(max_runs, int):
             raise HTTPException(status_code=400, detail="max_runs must be an integer")
-        
+
         result = await logic_app_manager.update_concurrency_settings(max_runs)
-        
+
         if not result.get("success", False):
             error_msg = result.get("error", "Unknown error occurred")
             raise HTTPException(status_code=400, detail=error_msg)
-        
+
         # Update the global semaphore to match the new concurrency setting
         global_processing_semaphore = asyncio.Semaphore(max_runs)
         set_global_processing_semaphore(global_processing_semaphore)
         logger.info(f"Updated global processing semaphore to allow {max_runs} concurrent operations")
-        
+
         # Add semaphore info to the result
         result["backend_semaphore_updated"] = True
         result["backend_max_concurrent"] = max_runs
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -287,15 +273,15 @@ async def get_workflow_definition():
         logic_app_manager = get_logic_app_manager()
         if not logic_app_manager:
             raise HTTPException(status_code=503, detail="Logic App Manager not initialized")
-        
+
         definition = await logic_app_manager.get_workflow_definition()
-        
+
         if not definition.get("enabled", False):
             error_msg = definition.get("error", "Unknown error occurred")
             raise HTTPException(status_code=400, detail=error_msg)
-        
+
         return definition
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -309,24 +295,24 @@ async def update_full_concurrency_settings(request: Request):
         logic_app_manager = get_logic_app_manager()
         if not logic_app_manager:
             raise HTTPException(status_code=503, detail="Logic App Manager not initialized")
-        
+
         request_body = await request.json()
-        max_runs = request_body.get('max_runs')
-        
+        max_runs = request_body.get("max_runs")
+
         if max_runs is None:
             raise HTTPException(status_code=400, detail="max_runs is required")
-        
+
         if not isinstance(max_runs, int):
             raise HTTPException(status_code=400, detail="max_runs must be an integer")
-        
+
         result = await logic_app_manager.update_action_concurrency_settings(max_runs)
-        
+
         if not result.get("success", False):
             error_msg = result.get("error", "Unknown error occurred")
             raise HTTPException(status_code=400, detail=error_msg)
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -339,54 +325,51 @@ async def process_file(request: Request, background_tasks: BackgroundTasks):
     try:
         request_body = await request.json()
         logger.info(f"Received process-file request: {request_body}")
-        
+
         # Extract parameters from Logic App request
-        filename = request_body.get('filename')
-        dataset = request_body.get('dataset')
-        blob_path = request_body.get('blob_path')
-        trigger_source = request_body.get('trigger_source', 'logic_app')
-        
+        filename = request_body.get("filename")
+        dataset = request_body.get("dataset")
+        blob_path = request_body.get("blob_path")
+        trigger_source = request_body.get("trigger_source", "logic_app")
+
         if not all([filename, dataset, blob_path]):
-            logger.error(f"Missing required parameters. filename: {filename}, dataset: {dataset}, blob_path: {blob_path}")
+            logger.error(
+                f"Missing required parameters. filename: {filename}, dataset: {dataset}, blob_path: {blob_path}"
+            )
             raise HTTPException(status_code=400, detail="Missing required parameters: filename, dataset, blob_path")
-        
+
         # Convert to blob URL format expected by our processing function
-        storage_account_name = os.getenv('AZURE_STORAGE_ACCOUNT_NAME')
+        storage_account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
         if not storage_account_name:
             raise HTTPException(status_code=500, detail="Storage account name not configured")
-        
+
         # Parse the blob_path to extract container and blob name
-        path_parts = blob_path.strip('/').split('/', 1)  # Split into at most 2 parts
+        path_parts = blob_path.strip("/").split("/", 1)  # Split into at most 2 parts
         if len(path_parts) != 2:
             raise HTTPException(status_code=400, detail="Invalid blob_path format. Expected: /container/blob-name")
-        
+
         container_name, blob_name = path_parts
         blob_url = f"https://{storage_account_name}.blob.core.windows.net/{container_name}/{blob_name}"
-        
+
         logger.info(f"Processing file: {filename} from dataset: {dataset}")
         logger.info(f"Blob path: {blob_path}")
         logger.info(f"Constructed blob URL: {blob_url}")
-        
+
         # Add to background tasks using our existing processing function
         background_tasks.add_task(
             process_blob_event,
             blob_url,
-            {
-                "url": blob_url,
-                "filename": filename,
-                "dataset": dataset,
-                "trigger_source": trigger_source
-            }
+            {"url": blob_url, "filename": filename, "dataset": dataset, "trigger_source": trigger_source},
         )
-        
+
         return {
-            "status": "accepted", 
+            "status": "accepted",
             "message": f"File {filename} queued for processing",
             "filename": filename,
             "dataset": dataset,
-            "blob_url": blob_url
+            "blob_url": blob_url,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -407,9 +390,9 @@ async def get_openai_settings():
             "mistral_endpoint": os.getenv("MISTRAL_DOC_AI_ENDPOINT", ""),
             "mistral_key": "***HIDDEN***" if os.getenv("MISTRAL_DOC_AI_KEY") else "",
             "mistral_model": os.getenv("MISTRAL_DOC_AI_MODEL", "mistral-document-ai-2505"),
-            "note": "Configuration is read from environment variables only. Update via deployment/infrastructure."
+            "note": "Configuration is read from environment variables only. Update via deployment/infrastructure.",
         }
-        
+
     except Exception as e:
         logger.error(f"Error fetching OpenAI settings: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch OpenAI settings")
@@ -419,7 +402,7 @@ async def update_openai_settings(request: Request):
     """Update OpenAI settings by modifying environment variables"""
     try:
         data = await request.json()
-        
+
         # Update environment variables
         if "openai_endpoint" in data:
             os.environ["AZURE_OPENAI_ENDPOINT"] = data["openai_endpoint"]
@@ -435,7 +418,7 @@ async def update_openai_settings(request: Request):
             os.environ["MISTRAL_DOC_AI_KEY"] = data["mistral_key"]
         if "mistral_model" in data:
             os.environ["MISTRAL_DOC_AI_MODEL"] = data["mistral_model"]
-        
+
         # Return success response with updated config (hide keys)
         updated_config = {
             "openai_endpoint": os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
@@ -445,11 +428,11 @@ async def update_openai_settings(request: Request):
             "mistral_endpoint": os.environ.get("MISTRAL_DOC_AI_ENDPOINT", ""),
             "mistral_key": "***hidden***" if os.environ.get("MISTRAL_DOC_AI_KEY") else "",
             "mistral_model": os.environ.get("MISTRAL_DOC_AI_MODEL", "mistral-document-ai-2505"),
-            "env_var_only": True
+            "env_var_only": True,
         }
-        
+
         return {"message": "Environment variables updated successfully", "config": updated_config}
-        
+
     except Exception as e:
         logger.error(f"Error updating OpenAI settings: {e}")
         raise HTTPException(status_code=400, detail=f"Error updating settings: {str(e)}")
@@ -465,44 +448,41 @@ async def chat_with_document(request: Request):
         document_id = data.get("document_id")
         message = data.get("message", "").strip()
         chat_history = data.get("chat_history", [])
-        
+
         if not document_id or not message:
             raise HTTPException(status_code=400, detail="document_id and message are required")
-        
+
         # Get the document from Cosmos DB
         cosmos_container, cosmos_config_container = connect_to_cosmos()
         if not cosmos_container:
             raise HTTPException(status_code=500, detail="Unable to connect to Cosmos DB")
-        
+
         try:
             # Fetch the document using a query (similar to frontend approach)
             query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-            items = list(cosmos_container.query_items(
-                query=query,
-                enable_cross_partition_query=True
-            ))
-            
+            items = list(cosmos_container.query_items(query=query, enable_cross_partition_query=True))
+
             if not items:
                 raise HTTPException(status_code=404, detail="Document not found")
-            
+
             document = items[0]
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error fetching document {document_id}: {e}")
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         # Extract GPT extraction data to use as context
-        extracted_data = document.get('extracted_data', {})
-        gpt_extraction = extracted_data.get('gpt_extraction_output')
-        ocr_data = extracted_data.get('ocr_output', '')
-        
+        extracted_data = document.get("extracted_data", {})
+        gpt_extraction = extracted_data.get("gpt_extraction_output")
+        ocr_data = extracted_data.get("ocr_output", "")
+
         if not gpt_extraction and not ocr_data:
             raise HTTPException(status_code=400, detail="No extracted data available for this document")
-        
+
         # Prepare context for the chat
         context_parts = []
-        
+
         if gpt_extraction:
             if isinstance(gpt_extraction, dict):
                 context_parts.append("GPT EXTRACTED DATA:")
@@ -510,28 +490,28 @@ async def chat_with_document(request: Request):
             else:
                 context_parts.append("GPT EXTRACTED DATA:")
                 context_parts.append(str(gpt_extraction))
-        
+
         if ocr_data and len(context_parts) == 0:
             # Only include OCR if no GPT extraction available
             context_parts.append("DOCUMENT TEXT (OCR):")
             # Limit OCR data to prevent token overflow
             ocr_snippet = ocr_data[:3000] + "..." if len(ocr_data) > 3000 else ocr_data
             context_parts.append(ocr_snippet)
-        
+
         document_context = "\n\n".join(context_parts)
-        
+
         # Build chat history for context
         conversation_context = ""
         if chat_history:
             conversation_context = "\n\nPREVIOUS CONVERSATION:\n"
             for i, chat_item in enumerate(chat_history[-5:]):  # Last 5 messages only
-                role = chat_item.get('role', 'user')
-                content = chat_item.get('content', '')
+                role = chat_item.get("role", "user")
+                content = chat_item.get("content", "")
                 conversation_context += f"{role.upper()}: {content}\n"
-        
+
         # Create the system prompt
-        system_prompt = f"""You are an AI assistant helping users understand and analyze document content. 
-        
+        system_prompt = f"""You are an AI assistant helping users understand and analyze document content.
+
 The user has uploaded a document that has been processed and analyzed. You have access to the extracted data from this document.
 
 Your role is to:
@@ -564,7 +544,7 @@ Please answer the user's question based on this document context."""
             "response": assistant_message,
             "finish_reason": finish_reason,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -599,9 +579,7 @@ async def argus_chat_with_document(
     question: Annotated[str, "Your question about the document"],
 ) -> Any:
     """Ask natural language questions about a specific document's content."""
-    return await _execute_mcp_tool(
-        "argus_chat_with_document", {"document_id": document_id, "question": question}
-    )
+    return await _execute_mcp_tool("argus_chat_with_document", {"document_id": document_id, "question": question})
 
 
 async def argus_list_datasets() -> Any:
@@ -640,9 +618,7 @@ async def argus_process_document_url(
     dataset: Annotated[str, "Dataset to use"] = "default-dataset",
 ) -> Any:
     """Manually queue a document for processing. NOTE: Only use this for RE-PROCESSING existing documents or processing documents uploaded through external means. Files uploaded through this chat are automatically processed - do not call this tool for newly uploaded attachments."""
-    return await _execute_mcp_tool(
-        "argus_process_document_url", {"blob_url": blob_url, "dataset": dataset}
-    )
+    return await _execute_mcp_tool("argus_process_document_url", {"blob_url": blob_url, "dataset": dataset})
 
 
 async def argus_get_upload_url(
@@ -650,15 +626,16 @@ async def argus_get_upload_url(
     dataset: Annotated[str, "Target dataset"] = "default-dataset",
 ) -> Any:
     """Get a pre-signed SAS URL for uploading a document to ARGUS."""
-    return await _execute_mcp_tool(
-        "argus_get_upload_url", {"filename": filename, "dataset": dataset}
-    )
+    return await _execute_mcp_tool("argus_get_upload_url", {"filename": filename, "dataset": dataset})
 
 
 async def argus_create_dataset(
     dataset_name: Annotated[str, "Unique name for the dataset (alphanumeric and hyphens only)"],
     system_prompt: Annotated[str, "Instructions for the AI on how to extract data from documents in this dataset"],
-    output_schema: Annotated[Dict[str, Any], "JSON schema defining the structure of extracted data. Use empty strings as placeholders for values."],
+    output_schema: Annotated[
+        Dict[str, Any],
+        "JSON schema defining the structure of extracted data. Use empty strings as placeholders for values.",
+    ],
     max_pages_per_chunk: Annotated[int, "Maximum pages to process per chunk"] = 10,
 ) -> Any:
     """Create a new dataset configuration with a custom system prompt and output schema for document extraction."""
@@ -698,10 +675,10 @@ async def mcp_chat(request: Request):
         message = data.get("message", "").strip()
         chat_history = data.get("chat_history", [])
         attachments = data.get("attachments", [])  # List of {filename, content_type, blob_url or upload pending}
-        
+
         if not message:
             raise HTTPException(status_code=400, detail="message is required")
-        
+
         # Build the ARGUS assistant system prompt
         system_prompt = """You are ARGUS AI Assistant, a helpful AI that helps users interact with the ARGUS Document Intelligence Platform.
 
@@ -736,10 +713,14 @@ If the user has attached files, inform them that the files have been uploaded an
             attachment_details = []
             for a in attachments:
                 detail = f"- {a.get('filename', 'unknown')}"
-                if a.get('document_id'):
+                if a.get("document_id"):
                     detail += f" (document_id: {a.get('document_id')})"
                 attachment_details.append(detail)
-            attachment_info = "\n\n[User has uploaded the following files which are now being automatically processed:\n" + "\n".join(attachment_details) + "\n\nYou can use the document_id to check processing status with argus_get_document.]"
+            attachment_info = (
+                "\n\n[User has uploaded the following files which are now being automatically processed:\n"
+                + "\n".join(attachment_details)
+                + "\n\nYou can use the document_id to check processing status with argus_get_document.]"
+            )
             message = message + attachment_info
 
         af_messages.append(user_message([text_content(message)]))
@@ -758,7 +739,7 @@ If the user has attached files, inform them that the files have been uploaded an
             "tool_calls": result.tool_calls,
             "finish_reason": result.finish_reason,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -773,15 +754,15 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
         data_container = get_data_container()
         conf_container = get_conf_container()
         blob_service_client = get_blob_service_client()
-        
+
         if tool_name == "argus_list_documents":
             dataset = arguments.get("dataset")
             status = arguments.get("status")
             limit = arguments.get("limit", 50)
-            
+
             if not data_container:
                 return {"error": "Data container not available"}
-            
+
             query = "SELECT c.id, c.file_name, c.partitionKey, c.properties.status, c.properties.timestamp FROM c"
             conditions = []
             if dataset:
@@ -791,24 +772,24 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
             query += f" ORDER BY c.properties.timestamp DESC OFFSET 0 LIMIT {limit}"
-            
+
             items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
             return {"documents": items, "count": len(items)}
-        
+
         elif tool_name == "argus_get_document":
             document_id = arguments.get("document_id")
             if not document_id:
                 return {"error": "document_id is required"}
-            
+
             if not data_container:
                 return {"error": "Data container not available"}
-            
+
             query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
             items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
-            
+
             if not items:
                 return {"error": "Document not found"}
-            
+
             doc = items[0]
             return {
                 "id": doc.get("id"),
@@ -818,99 +799,98 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
                 "ocr_text": doc.get("extracted_data", {}).get("ocr_output", "")[:2000],
                 "extraction": doc.get("extracted_data", {}).get("gpt_extraction_output"),
                 "summary": doc.get("extracted_data", {}).get("gpt_summary"),
-                "evaluation": doc.get("extracted_data", {}).get("evaluation")
+                "evaluation": doc.get("extracted_data", {}).get("evaluation"),
             }
-        
+
         elif tool_name == "argus_chat_with_document":
             document_id = arguments.get("document_id")
             question = arguments.get("question")
-            
+
             if not document_id or not question:
                 return {"error": "document_id and question are required"}
-            
+
             # Use the existing chat endpoint logic
-            from fastapi import Request as FakeRequest
             class MockRequest:
                 async def json(self):
                     return {"document_id": document_id, "message": question, "chat_history": []}
-            
+
             result = await chat_with_document(MockRequest())
             return {"answer": result.get("response")}
-        
+
         elif tool_name == "argus_list_datasets":
             if not conf_container:
                 return {"error": "Configuration container not available"}
-            
+
             query = "SELECT DISTINCT c.partitionKey FROM c"
             items = list(conf_container.query_items(query=query, enable_cross_partition_query=True))
             datasets = [item.get("partitionKey") for item in items if item.get("partitionKey")]
-            
+
             # Also check blob storage for datasets
             if blob_service_client:
-                container_name = os.getenv('STORAGE_CONTAINER_NAME', 'datasets')
+                container_name = os.getenv("STORAGE_CONTAINER_NAME", "datasets")
                 container_client = blob_service_client.get_container_client(container_name)
                 blobs = container_client.list_blobs()
                 blob_datasets = set()
                 for blob in blobs:
-                    parts = blob.name.split('/')
+                    parts = blob.name.split("/")
                     if len(parts) > 1:
                         blob_datasets.add(parts[0])
                 datasets = list(set(datasets) | blob_datasets)
-            
+
             return {"datasets": datasets}
-        
+
         elif tool_name == "argus_get_dataset_config":
             dataset_name = arguments.get("dataset_name")
             if not dataset_name:
                 return {"error": "dataset_name is required"}
-            
+
             prompt, schema = fetch_model_prompt_and_schema(dataset_name)
             return {
                 "dataset": dataset_name,
                 "system_prompt": prompt[:1000] if prompt else None,
-                "output_schema": schema
+                "output_schema": schema,
             }
-        
+
         elif tool_name == "argus_search_documents":
             query_text = arguments.get("query", "")
             dataset = arguments.get("dataset")
             limit = arguments.get("limit", 20)
-            
+
             if not data_container:
                 return {"error": "Data container not available"}
-            
+
             # Search by filename (Cosmos DB doesn't support full-text search easily)
             cosmos_query = f"SELECT c.id, c.file_name, c.partitionKey, c.properties.status FROM c WHERE CONTAINS(LOWER(c.file_name), LOWER('{query_text}'))"
             if dataset:
                 cosmos_query += f" AND c.partitionKey = '{dataset}'"
             cosmos_query += f" OFFSET 0 LIMIT {limit}"
-            
+
             items = list(data_container.query_items(query=cosmos_query, enable_cross_partition_query=True))
             return {"results": items, "count": len(items), "query": query_text}
-        
+
         elif tool_name == "argus_get_extraction":
             document_id = arguments.get("document_id")
             if not document_id:
                 return {"error": "document_id is required"}
-            
+
             if not data_container:
                 return {"error": "Data container not available"}
-            
+
             query = f"SELECT c.extracted_data.gpt_extraction_output FROM c WHERE c.id = '{document_id}'"
             items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
-            
+
             if not items:
                 return {"error": "Document not found"}
-            
+
             return {"extraction": items[0].get("gpt_extraction_output")}
-        
+
         elif tool_name == "argus_process_document_url":
             blob_url = arguments.get("blob_url")
             dataset = arguments.get("dataset", "default-dataset")
-            
+
             if not blob_url:
                 return {"error": "blob_url is required"}
-            
+
             # Queue for processing
             event_data = {
                 "url": blob_url,
@@ -918,43 +898,44 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
                     "run_ocr": True,
                     "run_gpt_vision": True,
                     "run_summary": True,
-                    "run_evaluation": True
-                }
+                    "run_evaluation": True,
+                },
             }
             asyncio.create_task(process_blob_event(blob_url, event_data))
-            
+
             return {"status": "queued", "blob_url": blob_url, "dataset": dataset}
-        
+
         elif tool_name == "argus_get_upload_url":
             filename = arguments.get("filename")
             dataset = arguments.get("dataset", "default-dataset")
-            
+
             if not filename:
                 return {"error": "filename is required"}
-            
+
             result = await get_upload_url(filename, dataset)
             return result
-        
+
         elif tool_name == "argus_create_dataset":
             dataset_name = arguments.get("dataset_name")
             system_prompt = arguments.get("system_prompt")
             output_schema = arguments.get("output_schema")
             max_pages = arguments.get("max_pages_per_chunk", 10)
-            
+
             if not dataset_name or not system_prompt or output_schema is None:
                 return {"error": "dataset_name, system_prompt, and output_schema are required"}
-            
+
             # Validate dataset name (alphanumeric and hyphens only)
             import re
-            if not re.match(r'^[a-zA-Z0-9-]+$', dataset_name):
+
+            if not re.match(r"^[a-zA-Z0-9-]+$", dataset_name):
                 return {"error": "dataset_name must contain only alphanumeric characters and hyphens"}
-            
+
             result = await create_dataset(dataset_name, system_prompt, output_schema, max_pages)
             return result
-        
+
         else:
             return {"error": f"Unknown tool: {tool_name}"}
-    
+
     except Exception as e:
         logger.error(f"Error executing MCP tool {tool_name}: {e}")
         return {"error": str(e)}
@@ -970,41 +951,38 @@ async def submit_correction(document_id: str, request: Request):
         corrected_data = data.get("corrected_data")
         correction_notes = data.get("notes", "")
         corrector_id = data.get("corrector_id", "anonymous")
-        
+
         if corrected_data is None:
             raise HTTPException(status_code=400, detail="corrected_data is required")
-        
+
         # Get the document from Cosmos DB
         data_container = get_data_container()
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
-        
+
         try:
             # Fetch the document using a query
             query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-            items = list(data_container.query_items(
-                query=query,
-                enable_cross_partition_query=True
-            ))
-            
+            items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+
             if not items:
                 raise HTTPException(status_code=404, detail="Document not found")
-            
+
             document = items[0]
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error fetching document {document_id}: {e}")
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         # Get the original GPT extraction
-        extracted_data = document.get('extracted_data', {})
-        original_extraction = extracted_data.get('gpt_extraction_output')
-        
+        extracted_data = document.get("extracted_data", {})
+        original_extraction = extracted_data.get("gpt_extraction_output")
+
         # Initialize corrections history if not present
-        if 'corrections' not in document:
-            document['corrections'] = []
-        
+        if "corrections" not in document:
+            document["corrections"] = []
+
         # Create correction record
         correction_record = {
             "timestamp": datetime.utcnow().isoformat(),
@@ -1012,34 +990,34 @@ async def submit_correction(document_id: str, request: Request):
             "notes": correction_notes,
             "original_data": copy.deepcopy(original_extraction) if original_extraction else None,
             "corrected_data": corrected_data,
-            "correction_number": len(document['corrections']) + 1
+            "correction_number": len(document["corrections"]) + 1,
         }
-        
+
         # Append to corrections history
-        document['corrections'].append(correction_record)
-        
+        document["corrections"].append(correction_record)
+
         # Update the current extraction with the corrected data
-        if 'extracted_data' not in document:
-            document['extracted_data'] = {}
-        document['extracted_data']['gpt_extraction_output'] = corrected_data
-        
+        if "extracted_data" not in document:
+            document["extracted_data"] = {}
+        document["extracted_data"]["gpt_extraction_output"] = corrected_data
+
         # Mark that this document has been human-corrected
-        document['human_corrected'] = True
-        document['last_correction_timestamp'] = datetime.utcnow().isoformat()
-        
+        document["human_corrected"] = True
+        document["last_correction_timestamp"] = datetime.utcnow().isoformat()
+
         # Upsert the document back to Cosmos DB
         data_container.upsert_item(document)
-        
+
         logger.info(f"Correction submitted for document {document_id} by {corrector_id}")
-        
+
         return {
             "status": "success",
             "message": "Correction submitted successfully",
             "document_id": document_id,
             "correction_number": correction_record["correction_number"],
-            "timestamp": correction_record["timestamp"]
+            "timestamp": correction_record["timestamp"],
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1058,39 +1036,36 @@ async def get_correction_history(document_id: str):
         data_container = get_data_container()
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
-        
+
         try:
             # Fetch the document using a query
             query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-            items = list(data_container.query_items(
-                query=query,
-                enable_cross_partition_query=True
-            ))
-            
+            items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+
             if not items:
                 raise HTTPException(status_code=404, detail="Document not found")
-            
+
             document = items[0]
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error fetching document {document_id}: {e}")
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         # Get current extraction and corrections
-        extracted_data = document.get('extracted_data', {})
-        current_extraction = extracted_data.get('gpt_extraction_output')
-        corrections = document.get('corrections', [])
-        
+        extracted_data = document.get("extracted_data", {})
+        current_extraction = extracted_data.get("gpt_extraction_output")
+        corrections = document.get("corrections", [])
+
         return {
             "document_id": document_id,
-            "human_corrected": document.get('human_corrected', False),
-            "last_correction_timestamp": document.get('last_correction_timestamp'),
+            "human_corrected": document.get("human_corrected", False),
+            "last_correction_timestamp": document.get("last_correction_timestamp"),
             "current_extraction": current_extraction,
             "corrections_count": len(corrections),
-            "corrections": corrections
+            "corrections": corrections,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1102,33 +1077,35 @@ async def get_concurrency_diagnostics():
     """Get diagnostic information about Logic App Manager setup"""
     try:
         logic_app_manager = get_logic_app_manager()
-        
+
         diagnostics = {
             "timestamp": datetime.utcnow().isoformat(),
             "logic_app_manager_initialized": logic_app_manager is not None,
             "environment_variables": {
-                "AZURE_SUBSCRIPTION_ID": bool(os.getenv('AZURE_SUBSCRIPTION_ID')),
-                "AZURE_RESOURCE_GROUP_NAME": bool(os.getenv('AZURE_RESOURCE_GROUP_NAME')),
-                "LOGIC_APP_NAME": bool(os.getenv('LOGIC_APP_NAME'))
+                "AZURE_SUBSCRIPTION_ID": bool(os.getenv("AZURE_SUBSCRIPTION_ID")),
+                "AZURE_RESOURCE_GROUP_NAME": bool(os.getenv("AZURE_RESOURCE_GROUP_NAME")),
+                "LOGIC_APP_NAME": bool(os.getenv("LOGIC_APP_NAME")),
             },
             "environment_values": {
-                "AZURE_SUBSCRIPTION_ID": os.getenv('AZURE_SUBSCRIPTION_ID', 'NOT_SET')[:8] + "..." if os.getenv('AZURE_SUBSCRIPTION_ID') else 'NOT_SET',
-                "AZURE_RESOURCE_GROUP_NAME": os.getenv('AZURE_RESOURCE_GROUP_NAME', 'NOT_SET'),
-                "LOGIC_APP_NAME": os.getenv('LOGIC_APP_NAME', 'NOT_SET')
-            }
+                "AZURE_SUBSCRIPTION_ID": os.getenv("AZURE_SUBSCRIPTION_ID", "NOT_SET")[:8] + "..."
+                if os.getenv("AZURE_SUBSCRIPTION_ID")
+                else "NOT_SET",
+                "AZURE_RESOURCE_GROUP_NAME": os.getenv("AZURE_RESOURCE_GROUP_NAME", "NOT_SET"),
+                "LOGIC_APP_NAME": os.getenv("LOGIC_APP_NAME", "NOT_SET"),
+            },
         }
-        
+
         if logic_app_manager:
             diagnostics["logic_app_manager_enabled"] = logic_app_manager.enabled
             diagnostics["subscription_id_configured"] = bool(logic_app_manager.subscription_id)
             diagnostics["resource_group_configured"] = bool(logic_app_manager.resource_group_name)
             diagnostics["logic_app_name_configured"] = bool(logic_app_manager.logic_app_name)
-            
+
             # Try to test Azure credentials
             try:
                 diagnostics["azure_credentials_test"] = "Testing..."
                 # Simple credential test
-                credential_test = DefaultAzureCredential()
+                DefaultAzureCredential()
                 # This will fail if credentials are not working, but won't actually call Azure
                 diagnostics["azure_credentials_available"] = True
             except Exception as e:
@@ -1137,21 +1114,18 @@ async def get_concurrency_diagnostics():
         else:
             diagnostics["logic_app_manager_enabled"] = False
             diagnostics["reason"] = "LogicAppManager not initialized"
-            
+
         return diagnostics
-        
+
     except Exception as e:
         logger.error(f"Error getting concurrency diagnostics: {e}")
-        return {
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat(),
-            "logic_app_manager_initialized": False
-        }
+        return {"error": str(e), "timestamp": datetime.utcnow().isoformat(), "logic_app_manager_initialized": False}
 
 
 # ============================================================================
 # Document Management Endpoints
 # ============================================================================
+
 
 async def list_documents(dataset: str = None):
     """List all documents, optionally filtered by dataset"""
@@ -1159,17 +1133,14 @@ async def list_documents(dataset: str = None):
         data_container = get_data_container()
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
-        
+
         if dataset:
             query = f"SELECT * FROM c WHERE c.dataset = '{dataset}'"
         else:
             query = "SELECT * FROM c"
-        
-        items = list(data_container.query_items(
-            query=query,
-            enable_cross_partition_query=True
-        ))
-        
+
+        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+
         # Transform documents to expected format
         documents = []
         for item in items:
@@ -1190,12 +1161,12 @@ async def list_documents(dataset: str = None):
                 "num_pages": item.get("num_pages"),
                 "properties": item.get("properties", {}),
                 "state": item.get("state", {}),
-                "extracted_data": item.get("extracted_data", {})
+                "extracted_data": item.get("extracted_data", {}),
             }
             documents.append(doc)
-        
+
         return {"documents": documents, "count": len(documents)}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1221,19 +1192,16 @@ async def get_document(document_id: str):
         data_container = get_data_container()
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
-        
+
         # Query for the document
         query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(
-            query=query,
-            enable_cross_partition_query=True
-        ))
-        
+        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+
         if not items:
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         item = items[0]
-        
+
         # Transform to expected format
         doc = {
             "id": item.get("id"),
@@ -1257,11 +1225,11 @@ async def get_document(document_id: str):
             "processing_options": item.get("processing_options", {}),
             "blob_url": item.get("blob_url"),
             "human_corrected": item.get("human_corrected", False),
-            "corrections": item.get("corrections", [])
+            "corrections": item.get("corrections", []),
         }
-        
+
         return doc
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1275,20 +1243,17 @@ async def delete_document(document_id: str):
         data_container = get_data_container()
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
-        
+
         # First find the document to get its info
         query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(
-            query=query,
-            enable_cross_partition_query=True
-        ))
-        
+        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+
         if not items:
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         # Delete the document using empty partition key (matches container config)
         data_container.delete_item(item=document_id, partition_key={})
-        
+
         # Also try to delete from blob storage
         item = items[0]
         blob_name = item.get("properties", {}).get("blob_name") or item.get("file_name")
@@ -1296,7 +1261,7 @@ async def delete_document(document_id: str):
             try:
                 blob_service_client = get_blob_service_client()
                 if blob_service_client:
-                    container_name = os.getenv('STORAGE_CONTAINER_NAME', 'datasets')
+                    container_name = os.getenv("STORAGE_CONTAINER_NAME", "datasets")
                     container_client = blob_service_client.get_container_client(container_name)
                     blob_client = container_client.get_blob_client(blob_name)
                     if blob_client.exists():
@@ -1304,9 +1269,9 @@ async def delete_document(document_id: str):
                         logger.info(f"Deleted blob: {blob_name}")
             except Exception as blob_error:
                 logger.warning(f"Could not delete blob {blob_name}: {blob_error}")
-        
+
         return {"status": "success", "message": f"Document {document_id} deleted"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1319,36 +1284,33 @@ async def reprocess_document(document_id: str, background_tasks: BackgroundTasks
     try:
         data_container = get_data_container()
         blob_service_client = get_blob_service_client()
-        
+
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
-        
+
         # Find the document
         query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(
-            query=query,
-            enable_cross_partition_query=True
-        ))
-        
+        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+
         if not items:
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         item = items[0]
-        
+
         # Get blob name from document properties
         blob_name = item.get("properties", {}).get("blob_name") or item.get("file_name")
-        
+
         if not blob_name:
             raise HTTPException(status_code=400, detail="Document does not have a blob reference for reprocessing")
-        
+
         # Construct the blob URL
         if blob_service_client:
-            storage_account = os.getenv('STORAGE_ACCOUNT_NAME', '')
-            container_name = os.getenv('STORAGE_CONTAINER_NAME', 'datasets')
+            storage_account = os.getenv("STORAGE_ACCOUNT_NAME", "")
+            container_name = os.getenv("STORAGE_CONTAINER_NAME", "datasets")
             blob_url = f"https://{storage_account}.blob.core.windows.net/{container_name}/{blob_name}"
         else:
             raise HTTPException(status_code=503, detail="Blob storage not available for reprocessing")
-        
+
         # Reset document state
         item["state"] = {
             "file_landed": True,
@@ -1361,20 +1323,16 @@ async def reprocess_document(document_id: str, background_tasks: BackgroundTasks
             "gpt_summary_completed": False,
             "processing_completed": False,
             "finished": False,
-            "error": False
+            "error": False,
         }
         item["errors"] = []
         data_container.upsert_item(item)
-        
+
         # Queue for reprocessing
-        background_tasks.add_task(
-            process_blob_event,
-            blob_url,
-            {"url": blob_url}
-        )
-        
+        background_tasks.add_task(process_blob_event, blob_url, {"url": blob_url})
+
         return {"status": "success", "message": f"Document {document_id} queued for reprocessing"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1386,71 +1344,77 @@ async def reprocess_document(document_id: str, background_tasks: BackgroundTasks
 # Dataset Management Endpoints
 # ============================================================================
 
+
 async def list_datasets():
     """List all available datasets"""
     try:
         conf_container = get_conf_container()
         blob_service_client = get_blob_service_client()
-        
+
         datasets = []
-        
+
         # Get datasets from configuration
         if conf_container:
             try:
-                config_item = conf_container.read_item(item='configuration', partition_key='configuration')
-                config_datasets = config_item.get('datasets', {})
+                config_item = conf_container.read_item(item="configuration", partition_key="configuration")
+                config_datasets = config_item.get("datasets", {})
                 for name, config in config_datasets.items():
-                    datasets.append({
-                        "name": name,
-                        "has_system_prompt": bool(config.get('system_prompt')),
-                        "has_output_schema": bool(config.get('output_schema')),
-                        "has_ground_truth": bool(config.get('ground_truth')),
-                        "description": config.get('description', '')
-                    })
+                    datasets.append(
+                        {
+                            "name": name,
+                            "has_system_prompt": bool(config.get("system_prompt")),
+                            "has_output_schema": bool(config.get("output_schema")),
+                            "has_ground_truth": bool(config.get("ground_truth")),
+                            "description": config.get("description", ""),
+                        }
+                    )
             except Exception as e:
                 logger.warning(f"Could not read configuration: {e}")
-        
+
         # Also check blob storage for dataset folders
         if blob_service_client:
             try:
-                storage_account = os.getenv('STORAGE_ACCOUNT_NAME', '')
-                container_name = os.getenv('STORAGE_CONTAINER_NAME', 'datasets')
+                container_name = os.getenv("STORAGE_CONTAINER_NAME", "datasets")
                 container_client = blob_service_client.get_container_client(container_name)
-                
+
                 # List blobs to find dataset folders - the structure is {dataset-name}/{file.pdf}
                 blob_list = container_client.list_blobs()
                 seen_datasets = set()
                 for blob in blob_list:
                     # Extract dataset name from path like "dataset-name/file.pdf"
-                    parts = blob.name.split('/')
+                    parts = blob.name.split("/")
                     if len(parts) >= 2:
                         dataset_name = parts[0]
                         if dataset_name and dataset_name not in seen_datasets:
                             seen_datasets.add(dataset_name)
                             # Add if not already in list from config
-                            if not any(d['name'] == dataset_name for d in datasets):
-                                datasets.append({
-                                    "name": dataset_name,
-                                    "has_system_prompt": False,
-                                    "has_output_schema": False,
-                                    "has_ground_truth": False,
-                                    "description": ""
-                                })
+                            if not any(d["name"] == dataset_name for d in datasets):
+                                datasets.append(
+                                    {
+                                        "name": dataset_name,
+                                        "has_system_prompt": False,
+                                        "has_output_schema": False,
+                                        "has_ground_truth": False,
+                                        "description": "",
+                                    }
+                                )
             except Exception as e:
                 logger.warning(f"Could not list blob datasets: {e}")
-        
+
         # Add default dataset if no datasets found
         if not datasets:
-            datasets.append({
-                "name": "default-dataset",
-                "has_system_prompt": False,
-                "has_output_schema": False,
-                "has_ground_truth": False,
-                "description": "Default dataset"
-            })
-        
+            datasets.append(
+                {
+                    "name": "default-dataset",
+                    "has_system_prompt": False,
+                    "has_output_schema": False,
+                    "has_ground_truth": False,
+                    "description": "Default dataset",
+                }
+            )
+
         return {"datasets": datasets}
-        
+
     except Exception as e:
         logger.error(f"Error listing datasets: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list datasets: {str(e)}")
@@ -1467,39 +1431,39 @@ async def upload_file(dataset_name: str, request: Request, background_tasks: Bac
         blob_service_client = get_blob_service_client()
         if not blob_service_client:
             raise HTTPException(status_code=503, detail="Blob storage not available")
-        
+
         # Get form data
         form = await request.form()
-        file = form.get('file')
-        
+        file = form.get("file")
+
         if not file:
             raise HTTPException(status_code=400, detail="No file provided")
-        
+
         # Get processing options from query params
-        run_ocr = request.query_params.get('run_ocr', 'true').lower() == 'true'
-        run_gpt_vision = request.query_params.get('run_gpt_vision', 'true').lower() == 'true'
-        run_summary = request.query_params.get('run_summary', 'true').lower() == 'true'
-        run_evaluation = request.query_params.get('run_evaluation', 'true').lower() == 'true'
-        
+        run_ocr = request.query_params.get("run_ocr", "true").lower() == "true"
+        run_gpt_vision = request.query_params.get("run_gpt_vision", "true").lower() == "true"
+        run_summary = request.query_params.get("run_summary", "true").lower() == "true"
+        run_evaluation = request.query_params.get("run_evaluation", "true").lower() == "true"
+
         # Read file content
         content = await file.read()
         filename = file.filename
-        
+
         # Upload to blob storage - use 'datasets' container which is the actual container name
-        container_name = os.getenv('STORAGE_CONTAINER_NAME', 'datasets')
+        container_name = os.getenv("STORAGE_CONTAINER_NAME", "datasets")
         blob_path = f"{dataset_name}/{filename}"
-        
+
         container_client = blob_service_client.get_container_client(container_name)
         blob_client = container_client.get_blob_client(blob_path)
-        
+
         blob_client.upload_blob(content, overwrite=True)
-        
+
         # Get the blob URL
         blob_url = blob_client.url
-        
+
         # Generate the document ID (same logic as blob_processing.py)
-        document_id = blob_path.replace('/', '__')
-        
+        document_id = blob_path.replace("/", "__")
+
         # Queue for processing if any processing options are enabled
         if run_ocr or run_gpt_vision or run_summary or run_evaluation:
             background_tasks.add_task(
@@ -1511,19 +1475,19 @@ async def upload_file(dataset_name: str, request: Request, background_tasks: Bac
                         "run_ocr": run_ocr,
                         "run_gpt_vision": run_gpt_vision,
                         "run_summary": run_summary,
-                        "run_evaluation": run_evaluation
-                    }
-                }
+                        "run_evaluation": run_evaluation,
+                    },
+                },
             )
-        
+
         return {
-            "message": "File uploaded successfully", 
-            "filename": filename, 
+            "message": "File uploaded successfully",
+            "filename": filename,
             "blob_url": blob_url,
             "document_id": document_id,
-            "dataset": dataset_name
+            "dataset": dataset_name,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1534,63 +1498,60 @@ async def upload_file(dataset_name: str, request: Request, background_tasks: Bac
 async def get_upload_url(filename: str, dataset_name: str = "default-dataset"):
     """Generate a SAS URL for direct blob upload"""
     from datetime import timedelta
-    from azure.storage.blob import generate_blob_sas, BlobSasPermissions
-    
+
+    from azure.storage.blob import BlobSasPermissions, generate_blob_sas
+
     blob_service_client = get_blob_service_client()
     if not blob_service_client:
         raise HTTPException(status_code=503, detail="Blob storage not available")
-    
+
     try:
-        container_name = os.getenv('STORAGE_CONTAINER_NAME', 'datasets')
+        container_name = os.getenv("STORAGE_CONTAINER_NAME", "datasets")
         blob_path = f"{dataset_name}/{filename}"
-        
+
         # Get account info
         account_name = blob_service_client.account_name
-        
+
         # Get container client and blob client
         container_client = blob_service_client.get_container_client(container_name)
         blob_client = container_client.get_blob_client(blob_path)
-        
+
         # Generate SAS token with write permission (valid for 1 hour)
         # Use user delegation key for SAS (more secure with managed identity)
         user_delegation_key = blob_service_client.get_user_delegation_key(
-            key_start_time=datetime.utcnow(),
-            key_expiry_time=datetime.utcnow() + timedelta(hours=1)
+            key_start_time=datetime.utcnow(), key_expiry_time=datetime.utcnow() + timedelta(hours=1)
         )
-        
+
         sas_token = generate_blob_sas(
             account_name=account_name,
             container_name=container_name,
             blob_name=blob_path,
             user_delegation_key=user_delegation_key,
             permission=BlobSasPermissions(write=True, create=True),
-            expiry=datetime.utcnow() + timedelta(hours=1)
+            expiry=datetime.utcnow() + timedelta(hours=1),
         )
-        
+
         # Construct the full URL with SAS token
         upload_url = f"{blob_client.url}?{sas_token}"
-        
+
         # Determine content type hint
-        ext = filename.lower().split('.')[-1] if '.' in filename else ''
+        ext = filename.lower().split(".")[-1] if "." in filename else ""
         content_type_hints = {
-            'pdf': 'application/pdf',
-            'png': 'image/png',
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'tiff': 'image/tiff',
-            'tif': 'image/tiff',
-            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            "pdf": "application/pdf",
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "tiff": "image/tiff",
+            "tif": "image/tiff",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }
-        content_type = content_type_hints.get(ext, 'application/octet-stream')
-        
+        content_type = content_type_hints.get(ext, "application/octet-stream")
+
         return {
             "upload_url": upload_url,
             "method": "PUT",
-            "headers": {
-                "x-ms-blob-type": "BlockBlob",
-                "Content-Type": content_type
-            },
+            "headers": {"x-ms-blob-type": "BlockBlob", "Content-Type": content_type},
             "filename": filename,
             "dataset": dataset_name,
             "blob_path": blob_path,
@@ -1600,11 +1561,11 @@ async def get_upload_url(filename: str, dataset_name: str = "default-dataset"):
                 "Set header 'x-ms-blob-type: BlockBlob'",
                 f"Set header 'Content-Type: {content_type}'",
                 "The file body should be the raw file content (not base64)",
-                "After upload, ARGUS will automatically process the document"
+                "After upload, ARGUS will automatically process the document",
             ],
-            "curl_example": f"curl -X PUT -H 'x-ms-blob-type: BlockBlob' -H 'Content-Type: {content_type}' --data-binary @{filename} '<upload_url>'"
+            "curl_example": f"curl -X PUT -H 'x-ms-blob-type: BlockBlob' -H 'Content-Type: {content_type}' --data-binary @{filename} '<upload_url>'",
         }
-        
+
     except Exception as e:
         logger.error(f"Error generating upload URL: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
@@ -1612,76 +1573,71 @@ async def get_upload_url(filename: str, dataset_name: str = "default-dataset"):
 
 async def get_document_file(document_id: str):
     """Get the file/blob for a document to serve as preview"""
-    from fastapi.responses import StreamingResponse
     import io
-    
+
+    from fastapi.responses import StreamingResponse
+
     try:
         data_container = get_data_container()
         blob_service_client = get_blob_service_client()
-        
+
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
-        
+
         # Find the document
         query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(
-            query=query,
-            enable_cross_partition_query=True
-        ))
-        
+        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+
         if not items:
             raise HTTPException(status_code=404, detail="Document not found")
-        
+
         item = items[0]
-        
+
         # Get blob name from document properties
         blob_name = item.get("properties", {}).get("blob_name") or item.get("file_name")
-        
+
         if not blob_name:
             raise HTTPException(status_code=404, detail="Document does not have a blob reference")
-        
+
         if not blob_service_client:
             raise HTTPException(status_code=503, detail="Blob storage not available")
-        
+
         # Get the blob content - use 'datasets' container
-        container_name = os.getenv('STORAGE_CONTAINER_NAME', 'datasets')
+        container_name = os.getenv("STORAGE_CONTAINER_NAME", "datasets")
         container_client = blob_service_client.get_container_client(container_name)
         blob_client = container_client.get_blob_client(blob_name)
-        
+
         if not blob_client.exists():
             raise HTTPException(status_code=404, detail="File not found in storage")
-        
+
         # Download blob content
         blob_data = blob_client.download_blob().readall()
-        
+
         # Determine content type
-        filename = blob_name.split('/')[-1].lower()
-        if filename.endswith('.pdf'):
+        filename = blob_name.split("/")[-1].lower()
+        if filename.endswith(".pdf"):
             content_type = "application/pdf"
-        elif filename.endswith('.png'):
+        elif filename.endswith(".png"):
             content_type = "image/png"
-        elif filename.endswith(('.jpg', '.jpeg')):
+        elif filename.endswith((".jpg", ".jpeg")):
             content_type = "image/jpeg"
-        elif filename.endswith('.tiff'):
+        elif filename.endswith(".tiff"):
             content_type = "image/tiff"
-        elif filename.endswith('.docx'):
+        elif filename.endswith(".docx"):
             content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        elif filename.endswith('.xlsx'):
+        elif filename.endswith(".xlsx"):
             content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        elif filename.endswith('.pptx'):
+        elif filename.endswith(".pptx"):
             content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         else:
             content_type = "application/octet-stream"
-        
+
         return StreamingResponse(
             io.BytesIO(blob_data),
             media_type=content_type,
-            headers={
-                "Content-Disposition": f"inline; filename=\"{filename}\"",
-                "Cache-Control": "public, max-age=3600"
-            }
+            headers={"Content-Disposition": f'inline; filename="{filename}"', "Cache-Control": "public, max-age=3600"},
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1690,77 +1646,67 @@ async def get_document_file(document_id: str):
 
 
 async def create_dataset(
-    dataset_name: str,
-    system_prompt: str,
-    output_schema: dict,
-    max_pages_per_chunk: int = 10
+    dataset_name: str, system_prompt: str, output_schema: dict, max_pages_per_chunk: int = 10
 ) -> Dict[str, Any]:
     """
     Create a new dataset configuration in ARGUS.
-    
+
     Args:
         dataset_name: Name of the dataset (alphanumeric and hyphens only)
         system_prompt: The system prompt for document extraction
         output_schema: JSON schema defining the expected output structure
         max_pages_per_chunk: Maximum pages per processing chunk (default: 10)
-    
+
     Returns:
         Dictionary with created dataset information
     """
     import re
-    
+
     # Validate dataset name
-    if not re.match(r'^[a-zA-Z0-9-]+$', dataset_name):
+    if not re.match(r"^[a-zA-Z0-9-]+$", dataset_name):
         raise ValueError("Dataset name must contain only alphanumeric characters and hyphens")
-    
+
     if len(dataset_name) < 2 or len(dataset_name) > 50:
         raise ValueError("Dataset name must be between 2 and 50 characters")
-    
+
     # Validate system_prompt
     if not system_prompt or len(system_prompt.strip()) < 10:
         raise ValueError("System prompt must be at least 10 characters")
-    
+
     # Validate output_schema is a valid dictionary
     if not isinstance(output_schema, dict):
         raise ValueError("Output schema must be a valid JSON object")
-    
+
     try:
         conf_container = get_conf_container()
-        
+
         # Get existing configuration
         try:
-            config_item = conf_container.read_item(
-                item='configuration',
-                partition_key='configuration'
-            )
+            config_item = conf_container.read_item(item="configuration", partition_key="configuration")
         except Exception:
             # Create new configuration if it doesn't exist
-            config_item = {
-                'id': 'configuration',
-                'partitionKey': 'configuration',
-                'datasets': {}
-            }
-        
+            config_item = {"id": "configuration", "partitionKey": "configuration", "datasets": {}}
+
         # Ensure datasets key exists
-        if 'datasets' not in config_item:
-            config_item['datasets'] = {}
-        
+        if "datasets" not in config_item:
+            config_item["datasets"] = {}
+
         # Check if dataset already exists
-        if dataset_name in config_item['datasets']:
+        if dataset_name in config_item["datasets"]:
             raise ValueError(f"Dataset '{dataset_name}' already exists. Use update_dataset to modify it.")
-        
+
         # Add new dataset configuration
-        config_item['datasets'][dataset_name] = {
-            'model_prompt': system_prompt.strip(),
-            'example_schema': output_schema,
-            'max_pages_per_chunk': max_pages_per_chunk
+        config_item["datasets"][dataset_name] = {
+            "model_prompt": system_prompt.strip(),
+            "example_schema": output_schema,
+            "max_pages_per_chunk": max_pages_per_chunk,
         }
-        
+
         # Upsert the configuration
         conf_container.upsert_item(body=config_item)
-        
+
         logger.info(f"Created dataset '{dataset_name}' successfully")
-        
+
         return {
             "success": True,
             "dataset_name": dataset_name,
@@ -1768,10 +1714,10 @@ async def create_dataset(
             "configuration": {
                 "system_prompt_length": len(system_prompt),
                 "output_schema_fields": list(output_schema.keys()) if output_schema else [],
-                "max_pages_per_chunk": max_pages_per_chunk
-            }
+                "max_pages_per_chunk": max_pages_per_chunk,
+            },
         }
-        
+
     except ValueError:
         raise
     except Exception as e:
@@ -1782,7 +1728,7 @@ async def create_dataset(
 async def create_dataset_endpoint(request: Request):
     """
     REST API endpoint to create a new dataset.
-    
+
     Request body:
     {
         "dataset_name": "my-dataset",
@@ -1792,39 +1738,38 @@ async def create_dataset_endpoint(request: Request):
     }
     """
     import re
-    
+
     try:
         body = await request.json()
-        
+
         # Extract and validate required fields
-        dataset_name = body.get('dataset_name')
-        system_prompt = body.get('system_prompt')
-        output_schema = body.get('output_schema')
-        max_pages_per_chunk = body.get('max_pages_per_chunk', 10)
-        
+        dataset_name = body.get("dataset_name")
+        system_prompt = body.get("system_prompt")
+        output_schema = body.get("output_schema")
+        max_pages_per_chunk = body.get("max_pages_per_chunk", 10)
+
         if not dataset_name:
             raise HTTPException(status_code=400, detail="dataset_name is required")
         if not system_prompt:
             raise HTTPException(status_code=400, detail="system_prompt is required")
         if output_schema is None:
             raise HTTPException(status_code=400, detail="output_schema is required")
-        
+
         # Validate dataset name format
-        if not re.match(r'^[a-zA-Z0-9-]+$', dataset_name):
+        if not re.match(r"^[a-zA-Z0-9-]+$", dataset_name):
             raise HTTPException(
-                status_code=400, 
-                detail="Dataset name must contain only alphanumeric characters and hyphens"
+                status_code=400, detail="Dataset name must contain only alphanumeric characters and hyphens"
             )
-        
+
         result = await create_dataset(
             dataset_name=dataset_name,
             system_prompt=system_prompt,
             output_schema=output_schema,
-            max_pages_per_chunk=max_pages_per_chunk
+            max_pages_per_chunk=max_pages_per_chunk,
         )
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except ValueError as e:

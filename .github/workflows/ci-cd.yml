@@ -32,8 +32,9 @@ jobs:
 
       - name: Lint Python (ruff)
         run: |
-          pip install ruff
-          ruff check src/ --select=E,W,F,S
+          pip install ruff==0.15.18
+          ruff check src
+          ruff format --check src
 
       - uses: actions/setup-node@v4
         with:

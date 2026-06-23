@@ -1,9 +1,10 @@
-import logging
 import json
+import logging
 import re
-from typing import List, Any, Dict
+from typing import Any, Dict, List
+
+from ai_ocr.agents import image_content, run_chat_sync, text_content, user_message
 from ai_ocr.azure.config import get_config
-from ai_ocr.agents import run_chat_sync, user_message, text_content, image_content
 
 
 class _Message:
@@ -12,6 +13,7 @@ class _Message:
     def __init__(self, content: str):
         self.content = content
 
+
 def clean_json_response(raw_content: str) -> str:
     """
     Attempt to clean common JSON formatting issues in GPT responses
@@ -19,39 +21,39 @@ def clean_json_response(raw_content: str) -> str:
     try:
         # Remove markdown code blocks if present
         content = raw_content.strip()
-        if content.startswith('```json'):
+        if content.startswith("```json"):
             content = content[7:]
-        if content.startswith('```'):
+        if content.startswith("```"):
             content = content[3:]
-        if content.endswith('```'):
+        if content.endswith("```"):
             content = content[:-3]
-        
+
         # Remove any leading/trailing whitespace
         content = content.strip()
-        
+
         # Try to find the JSON object boundaries
-        start_idx = content.find('{')
-        end_idx = content.rfind('}')
-        
+        start_idx = content.find("{")
+        end_idx = content.rfind("}")
+
         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            content = content[start_idx:end_idx + 1]
+            content = content[start_idx : end_idx + 1]
         else:
             # Try array boundaries if object boundaries not found
-            start_idx = content.find('[')
-            end_idx = content.rfind(']')
+            start_idx = content.find("[")
+            end_idx = content.rfind("]")
             if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                content = content[start_idx:end_idx + 1]
-        
+                content = content[start_idx : end_idx + 1]
+
         # Fix common JSON issues step by step
-        
+
         # 1. Replace single quotes with double quotes for property names and values
         # Be careful to not break contractions within string values
         content = re.sub(r"'(\w+)':", r'"\1":', content)  # Fix property names with single quotes
-        content = re.sub(r': \'([^\']*?)\'(?=\s*[,}\]])', r': "\1"', content)  # Fix string values with single quotes
-        
+        content = re.sub(r": \'([^\']*?)\'(?=\s*[,}\]])", r': "\1"', content)  # Fix string values with single quotes
+
         # 2. Fix trailing commas before closing brackets/braces
-        content = re.sub(r',(\s*[}\]])', r'\1', content)
-        
+        content = re.sub(r",(\s*[}\]])", r"\1", content)
+
         # 3. Fix unescaped quotes within strings (simple heuristic)
         # Find strings that have unescaped quotes and escape them
         def escape_quotes_in_strings(match):
@@ -59,81 +61,84 @@ def clean_json_response(raw_content: str) -> str:
             # Escape any unescaped quotes inside
             escaped = string_content.replace('"', '\\"')
             return f'"{escaped}"'
-        
+
         # This regex finds strings that might have unescaped quotes
         content = re.sub(r'"([^"]*(?:\\"[^"]*)*)"', lambda m: m.group(0), content)
-        
+
         # 4. Fix missing quotes around property names
-        content = re.sub(r'(\w+):', r'"\1":', content)
-        
+        content = re.sub(r"(\w+):", r'"\1":', content)
+
         # 5. Fix missing quotes around string values that look like they should be strings
         # This is tricky - only do this for values that are clearly meant to be strings
-        content = re.sub(r': ([A-Za-z][A-Za-z0-9\s]*?)(?=\s*[,}\]])', r': "\1"', content)
-        
+        content = re.sub(r": ([A-Za-z][A-Za-z0-9\s]*?)(?=\s*[,}\]])", r': "\1"', content)
+
         # 6. Remove any remaining text after the JSON object/array
-        if content.startswith('{'):
+        if content.startswith("{"):
             brace_count = 0
             for i, char in enumerate(content):
-                if char == '{':
+                if char == "{":
                     brace_count += 1
-                elif char == '}':
+                elif char == "}":
                     brace_count -= 1
                     if brace_count == 0:
-                        content = content[:i+1]
+                        content = content[: i + 1]
                         break
-        elif content.startswith('['):
+        elif content.startswith("["):
             bracket_count = 0
             for i, char in enumerate(content):
-                if char == '[':
+                if char == "[":
                     bracket_count += 1
-                elif char == ']':
+                elif char == "]":
                     bracket_count -= 1
                     if bracket_count == 0:
-                        content = content[:i+1]
+                        content = content[: i + 1]
                         break
-        
+
         return content
-        
+
     except Exception as e:
         logging.error(f"Error cleaning JSON: {e}")
         return ""
 
-def get_structured_data(markdown_content: str, prompt: str, json_schema: str, images: List[str] = [], cosmos_config_container=None) -> Any:
+
+def get_structured_data(
+    markdown_content: str, prompt: str, json_schema: str, images: List[str] = [], cosmos_config_container=None
+) -> Any:
     config = get_config(cosmos_config_container)
-    
+
     # Determine what input modalities we have
     has_text = bool(markdown_content and markdown_content.strip())
     has_images = bool(images)
-    
+
     # Build context-aware instructions
     modality_instruction = ""
     if has_text and has_images:
         modality_instruction = """
         **MULTIMODAL INPUT DETECTED**: You have both text (OCR) and images available.
-        
+
         EXTRACTION STRATEGY:
         1. Use the OCR text as your primary source for detailed information (names, numbers, exact text)
         2. Use the images to validate the OCR text and extract any visual elements not captured in text
         3. Cross-reference between text and images to ensure accuracy
         4. If there are discrepancies, prefer the images for layout and structure, text for precise details
         5. Extract information from BOTH sources to create a comprehensive result
-        
+
         The text contains the exact extracted content from the document, while images provide visual context and layout information.
         """
     elif has_text and not has_images:
         modality_instruction = """
-        **TEXT-ONLY INPUT**: You only have OCR text available. 
+        **TEXT-ONLY INPUT**: You only have OCR text available.
         Extract all information from the provided text content. Be thorough and extract every relevant detail.
         """
     elif not has_text and has_images:
         modality_instruction = """
-        **IMAGE-ONLY INPUT**: You only have images available (no OCR text). 
+        **IMAGE-ONLY INPUT**: You only have images available (no OCR text).
         Extract all information directly from the images. Read every visible text, number, and structured element.
         Pay attention to layout, tables, forms, and any visual organization of the information.
         """
     else:
         raise ValueError("No input provided - both OCR text and images are missing")
-    
+
     system_content = f"""
     You are an expert document extraction AI. Your task is to extract structured JSON data from a document.
 
@@ -174,10 +179,10 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
 
     CUSTOM EXTRACTION INSTRUCTIONS:
     {prompt}
-    
+
     JSON SCHEMA TEMPLATE TO FOLLOW:
     {json.dumps(json_schema, indent=2)}
-    
+
     ⚠️ IMPORTANT: Return ONLY valid JSON, nothing else. No explanations, no markdown formatting, no text outside the JSON.
     """
 
@@ -208,10 +213,10 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
 
         raw_content = result.text
         finish_reason = result.finish_reason
-        
+
         logging.info(f"GPT Raw Response: {raw_content[:500]}...")  # Log first 500 chars
         logging.info(f"GPT Finish Reason: {finish_reason}")
-        
+
         # Check if the response was truncated due to hitting max tokens
         if finish_reason == "length":
             logging.error("GPT response was truncated due to hitting max completion tokens")
@@ -224,17 +229,14 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
                 "user_action_required": "The document chunk is too large for the current model configuration. Please try one of the following solutions:",
                 "recommendations": [
                     "Reduce the 'max_pages_per_chunk' parameter to process smaller chunks of the document",
-                    "Use a shorter and more concise JSON schema to reduce output requirements", 
+                    "Use a shorter and more concise JSON schema to reduce output requirements",
                     "Break down complex extraction tasks into simpler, more focused extractions",
-                    "Consider using a model with higher token limits if available"
+                    "Consider using a model with higher token limits if available",
                 ],
-                "technical_details": {
-                    "response_length": len(raw_content),
-                    "truncated": True
-                }
+                "technical_details": {"response_length": len(raw_content), "truncated": True},
             }
             return _Message(json.dumps(error_response))
-        
+
         # Try to parse as JSON to validate
         try:
             json.loads(raw_content)
@@ -243,22 +245,24 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
         except json.JSONDecodeError as json_error:
             logging.error(f"GPT returned invalid JSON: {json_error}")
             logging.error(f"Raw content: {raw_content}")
-            
+
             # Check if this might be a partial JSON due to truncation (even if finish_reason wasn't "length")
             is_likely_truncated = False
             if raw_content:
                 # Check for common signs of truncation
                 content_stripped = raw_content.strip()
-                if (not content_stripped.endswith('}') and not content_stripped.endswith(']')) or \
-                   content_stripped.count('{') != content_stripped.count('}') or \
-                   content_stripped.count('[') != content_stripped.count(']'):
+                if (
+                    (not content_stripped.endswith("}") and not content_stripped.endswith("]"))
+                    or content_stripped.count("{") != content_stripped.count("}")
+                    or content_stripped.count("[") != content_stripped.count("]")
+                ):
                     is_likely_truncated = True
                     logging.warning("JSON appears to be truncated based on bracket analysis")
-            
+
             if is_likely_truncated:
                 error_response = {
                     "error": "GPT response appears to be truncated, resulting in invalid JSON",
-                    "error_type": "likely_truncation", 
+                    "error_type": "likely_truncation",
                     "finish_reason": finish_reason,
                     "json_error": str(json_error),
                     "raw_content": raw_content[:1000],
@@ -268,38 +272,38 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
                         "Reduce the 'max_pages_per_chunk' parameter to process smaller document chunks",
                         "Simplify the JSON schema to require less detailed output",
                         "Use a more concise system prompt to reduce token usage",
-                        "Consider processing the document in smaller sections"
+                        "Consider processing the document in smaller sections",
                     ],
                     "technical_details": {
                         "response_length": len(raw_content),
-                        "brackets_balanced": content_stripped.count('{') == content_stripped.count('}'),
-                        "likely_truncated": True
-                    }
+                        "brackets_balanced": content_stripped.count("{") == content_stripped.count("}"),
+                        "likely_truncated": True,
+                    },
                 }
                 return _Message(json.dumps(error_response))
-            
+
             # Multiple fallback strategies for JSON cleaning
             cleanup_strategies = [
                 lambda x: clean_json_response(x),  # Our custom cleaner
-                lambda x: x.strip().replace('```json', '').replace('```', '').strip(),  # Simple markdown removal
-                lambda x: re.sub(r'^.*?(\{.*\}).*$', r'\1', x, flags=re.DOTALL),  # Extract just the JSON object
-                lambda x: re.sub(r'^.*?(\[.*\]).*$', r'\1', x, flags=re.DOTALL),  # Extract just the JSON array
+                lambda x: x.strip().replace("```json", "").replace("```", "").strip(),  # Simple markdown removal
+                lambda x: re.sub(r"^.*?(\{.*\}).*$", r"\1", x, flags=re.DOTALL),  # Extract just the JSON object
+                lambda x: re.sub(r"^.*?(\[.*\]).*$", r"\1", x, flags=re.DOTALL),  # Extract just the JSON array
             ]
-            
+
             for i, strategy in enumerate(cleanup_strategies):
                 try:
                     cleaned_content = strategy(raw_content)
                     if cleaned_content:
                         json.loads(cleaned_content)  # Validate it parses
-                        logging.info(f"Successfully cleaned JSON using strategy {i+1}")
+                        logging.info(f"Successfully cleaned JSON using strategy {i + 1}")
                         # Create a new message object with cleaned content
                         return _Message(cleaned_content)
                 except (json.JSONDecodeError, Exception) as cleanup_error:
-                    logging.warning(f"Cleanup strategy {i+1} failed: {cleanup_error}")
+                    logging.warning(f"Cleanup strategy {i + 1} failed: {cleanup_error}")
                     continue
-            
+
             logging.error("All JSON cleanup strategies failed")
-            
+
             # Return a structured error response for parsing failures
             error_response = {
                 "error": "Invalid JSON response from GPT - unable to parse after cleanup attempts",
@@ -313,25 +317,25 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
                     "Try running the extraction again (temporary GPT formatting issue)",
                     "Reduce document complexity or chunk size if the issue persists",
                     "Simplify the JSON schema to reduce formatting complexity",
-                    "Check if the system prompt is causing formatting conflicts"
+                    "Check if the system prompt is causing formatting conflicts",
                 ],
                 "technical_details": {
                     "response_length": len(raw_content),
                     "cleanup_attempts": len(cleanup_strategies),
-                    "all_cleanup_failed": True
-                }
+                    "all_cleanup_failed": True,
+                },
             }
             return _Message(json.dumps(error_response))
-            
+
     except Exception as e:
         logging.error(f"GPT API call failed: {e}")
-        error_response = {
-            "error": "GPT API call failed",
-            "exception": str(e)
-        }
+        error_response = {"error": "GPT API call failed", "exception": str(e)}
         return _Message(json.dumps(error_response))
 
-def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dict, json_schema: str, cosmos_config_container=None) -> Dict:
+
+def perform_gpt_evaluation_and_enrichment(
+    images: List[str], extracted_data: Dict, json_schema: str, cosmos_config_container=None
+) -> Dict:
     system_content = f"""
     You are an AI assistant tasked with evaluating extracted data from a document.
 
@@ -388,10 +392,10 @@ def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dic
 
         raw_content = result.text
         finish_reason = result.finish_reason
-        
+
         logging.info(f"GPT Evaluation Raw Response: {raw_content[:300]}...")
         logging.info(f"GPT Evaluation Finish Reason: {finish_reason}")
-        
+
         # Check if the response was truncated due to hitting max tokens
         if finish_reason == "length":
             logging.error("GPT evaluation response was truncated due to hitting max completion tokens")
@@ -405,26 +409,28 @@ def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dic
                 "recommendations": [
                     "Simplify the extracted data or reduce the amount of data being evaluated",
                     "Process the evaluation in smaller chunks",
-                    "Use a model with higher token limits if available"
-                ]
+                    "Use a model with higher token limits if available",
+                ],
             }
-        
+
         try:
             return json.loads(raw_content)
         except json.JSONDecodeError as json_error:
             logging.error(f"GPT evaluation returned invalid JSON: {json_error}")
             logging.error(f"Raw evaluation content: {raw_content}")
-            
+
             # Check if this might be a partial JSON due to truncation
             is_likely_truncated = False
             if raw_content:
                 content_stripped = raw_content.strip()
-                if (not content_stripped.endswith('}') and not content_stripped.endswith(']')) or \
-                   content_stripped.count('{') != content_stripped.count('}') or \
-                   content_stripped.count('[') != content_stripped.count(']'):
+                if (
+                    (not content_stripped.endswith("}") and not content_stripped.endswith("]"))
+                    or content_stripped.count("{") != content_stripped.count("}")
+                    or content_stripped.count("[") != content_stripped.count("]")
+                ):
                     is_likely_truncated = True
                     logging.warning("Evaluation JSON appears to be truncated based on bracket analysis")
-            
+
             if is_likely_truncated:
                 return {
                     "error": "GPT evaluation response appears to be truncated, resulting in invalid JSON",
@@ -438,31 +444,31 @@ def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dic
                         "Reduce the 'max_pages_per_chunk' parameter to process smaller document chunks",
                         "Simplify the evaluation criteria by using a more focused JSON schema",
                         "Process evaluation in smaller chunks or split into multiple simpler evaluations",
-                        "Consider skipping evaluation for very large documents if extraction quality is sufficient"
-                    ]
+                        "Consider skipping evaluation for very large documents if extraction quality is sufficient",
+                    ],
                 }
-            
+
             # Multiple fallback strategies for JSON cleaning
             cleanup_strategies = [
                 lambda x: clean_json_response(x),  # Our custom cleaner
-                lambda x: x.strip().replace('```json', '').replace('```', '').strip(),  # Simple markdown removal
-                lambda x: re.sub(r'^.*?(\{.*\}).*$', r'\1', x, flags=re.DOTALL),  # Extract just the JSON object
-                lambda x: re.sub(r'^.*?(\[.*\]).*$', r'\1', x, flags=re.DOTALL),  # Extract just the JSON array
+                lambda x: x.strip().replace("```json", "").replace("```", "").strip(),  # Simple markdown removal
+                lambda x: re.sub(r"^.*?(\{.*\}).*$", r"\1", x, flags=re.DOTALL),  # Extract just the JSON object
+                lambda x: re.sub(r"^.*?(\[.*\]).*$", r"\1", x, flags=re.DOTALL),  # Extract just the JSON array
             ]
-            
+
             for i, strategy in enumerate(cleanup_strategies):
                 try:
                     cleaned_content = strategy(raw_content)
                     if cleaned_content:
                         result = json.loads(cleaned_content)  # Validate it parses
-                        logging.info(f"Successfully cleaned evaluation JSON using strategy {i+1}")
+                        logging.info(f"Successfully cleaned evaluation JSON using strategy {i + 1}")
                         return result
                 except (json.JSONDecodeError, Exception) as cleanup_error:
-                    logging.warning(f"Evaluation cleanup strategy {i+1} failed: {cleanup_error}")
+                    logging.warning(f"Evaluation cleanup strategy {i + 1} failed: {cleanup_error}")
                     continue
-            
+
             logging.error("All evaluation JSON cleanup strategies failed")
-            
+
             # Return structured error with original data
             return {
                 "error": "Failed to parse GPT evaluation result after cleanup attempts",
@@ -476,10 +482,10 @@ def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dic
                     "Try running the evaluation again (temporary GPT formatting issue)",
                     "Reduce evaluation complexity by simplifying the JSON schema",
                     "Process evaluation in smaller chunks or with fewer images",
-                    "Consider using extraction results without evaluation if quality is acceptable"
-                ]
+                    "Consider using extraction results without evaluation if quality is acceptable",
+                ],
             }
-            
+
     except Exception as e:
         logging.error(f"Failed to get GPT evaluation: {e}")
         return {
@@ -491,13 +497,14 @@ def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dic
                 "Check network connectivity and API availability",
                 "Try running the evaluation again",
                 "Reduce document complexity if the issue persists",
-                "Consider using extraction results without evaluation"
-            ]
+                "Consider using extraction results without evaluation",
+            ],
         }
+
 
 def get_summary_with_gpt(mkd_output_json, cosmos_config_container=None) -> Any:
     reasoning_prompt = """
-    Use the provided data represented in the schema to produce a summary in natural language. 
+    Use the provided data represented in the schema to produce a summary in natural language.
     The format should be a few sentences summary of the document.
     """
     messages = [user_message([text_content(json.dumps(mkd_output_json))])]

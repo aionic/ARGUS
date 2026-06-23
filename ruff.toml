@@ -1,0 +1,12 @@
+# Single source of truth for ruff across the repo (src/containerapp, src/evaluators).
+line-length = 120
+target-version = "py313"
+# Source roots so first-party imports (e.g. `ai_ocr`, `api_routes`, `src.evaluators`)
+# are classified correctly by the import sorter regardless of where ruff is invoked.
+src = ["src/containerapp", "src/evaluators", "."]
+
+[lint]
+select = ["E", "F", "W", "I"]
+# Line length is enforced by `ruff format`; long unsplittable strings/URLs
+# should not fail linting.
+ignore = ["E501"]

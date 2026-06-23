@@ -3,7 +3,6 @@ from src.evaluators.fuzz_string_evaluator import FuzzStringEvaluator
 
 
 class JsonEvaluator:
-
     class FieldEvaluatorWrapper:
         def __init__(self, evaluator_instance):
             self.name = evaluator_instance.__class__.__name__
@@ -12,11 +11,7 @@ class JsonEvaluator:
             self.total_score = 0
 
         def calculate_ratio(self):
-            return (
-                self.total_score / self.total_strings_compared
-                if self.total_strings_compared > 0
-                else 0
-            )
+            return self.total_score / self.total_strings_compared if self.total_strings_compared > 0 else 0
 
     def __init__(
         self,
@@ -31,9 +26,7 @@ class JsonEvaluator:
     def __call__(self, ground_truth, actual, eval_schema={}):
         self.compare_values(ground_truth, actual, eval_schema, None)
         for wrapper in self.eval_wrappers:
-            self.result[f"{wrapper.name}.ratio"] = (
-                wrapper.calculate_ratio()
-            )
+            self.result[f"{wrapper.name}.ratio"] = wrapper.calculate_ratio()
 
         return self.result
 
@@ -62,7 +55,7 @@ class JsonEvaluator:
             next_key = f"{curr_key}.{key}" if curr_key is not None else key
             actual = actual_dict.get(key, None) if actual_dict is not None else None
             curr_eval_schema = eval_schema.get(key, {}) if eval_schema is not None else {}
-            
+
             self.compare_values(
                 ground_truth_dict[key],
                 actual,
