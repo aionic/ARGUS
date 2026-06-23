@@ -133,7 +133,7 @@ graph TB
 | **📁 Document Storage** | Azure Blob Storage | Secure, scalable document repository |
 | **🗄️ Metadata Database** | Azure Cosmos DB | Results, configurations, and analytics |
 | **🔍 OCR Engine** | Azure Document Intelligence or Mistral Document AI | Structured text and layout extraction |
-| **🧠 AI Reasoning** | Azure OpenAI (GPT-5.4) | Contextual understanding and extraction |
+| **🧠 AI Reasoning** | Azure AI Foundry (GPT-5.4) via Microsoft Agent Framework | Contextual understanding and extraction |
 | **🏗️ Container Registry** | Azure Container Registry | Private, secure container images |
 | **🔒 Security** | Managed Identity + RBAC | Zero-credential architecture |
 | **🌐 Network** | VNet + Private Endpoints | Network isolation for all Azure services |
@@ -532,7 +532,7 @@ ARGUS/
 │       ├── ⚙️ identity.bicep            # User-assigned managed identity
 │       ├── ⚙️ storage.bicep             # Storage account + private endpoint
 │       ├── ⚙️ cosmos.bicep              # Cosmos DB + private endpoint
-│       ├── ⚙️ ai-services.bicep         # Azure OpenAI + model deployment + PE
+│       ├── ⚙️ ai-services.bicep         # Azure AI Foundry account + project + model deployment + PE
 │       ├── ⚙️ document-intelligence.bicep # Doc Intelligence + private endpoint
 │       ├── ⚙️ key-vault.bicep           # Key Vault + private endpoint
 │       ├── ⚙️ container-registry.bicep  # ACR for container images
@@ -550,14 +550,18 @@ ARGUS/
 │   │   ├── ⚙️ blob_processing.py        # Document processing pipeline orchestration
 │   │   ├── 🎛️ logic_app_manager.py     # Azure Logic Apps concurrency management
 │   │   ├── 🐳 Dockerfile                # Container image definition
-│   │   ├── 📦 requirements.txt          # Python dependencies
+│   │   ├── 📦 pyproject.toml            # Python dependencies & project metadata (uv)
+│   │   ├── 🔒 uv.lock                   # Pinned, reproducible dependency lockfile
 │   │   ├── 📄 REFACTORING_SUMMARY.md    # Architecture documentation
 │   │   │
 │   │   ├── 📂 ai_ocr/                   # 🧠 AI Processing Engine
 │   │   │   ├── 🔍 process.py            # Main processing orchestration & workflow
-│   │   │   ├── 🔗 chains.py             # LangChain integration & AI workflows
+│   │   │   ├── 🔗 chains.py             # Microsoft Agent Framework extraction workflows
 │   │   │   ├── 🤖 model.py              # Configuration models & data structures
 │   │   │   ├── ⏱️ timeout.py            # Processing timeout management
+│   │   │   │
+│   │   │   ├── 📂 agents/               # 🤝 Microsoft Agent Framework integration
+│   │   │   │   └── 🔌 client.py         # Foundry/OpenAI chat client + sync bridge
 │   │   │   │
 │   │   │   └── 📂 azure/                # ☁️ Azure Service Integrations
 │   │   │       ├── ⚙️ config.py         # Environment & configuration management
@@ -633,18 +637,16 @@ ARGUS/
 ### 🧪 Local Development Setup
 
 ```bash
-# Setup development environment
+# Setup development environment (uv manages the venv + Python 3.13)
 cd src/containerapp
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -r requirements.txt
+uv sync
 
 # Configure local environment
 cp ../../.env.template .env
 # Edit .env with your development credentials
 
 # Run with hot reload
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 # Access API documentation
 open http://localhost:8000/docs
@@ -655,7 +657,7 @@ open http://localhost:8000/docs
 | Category | Technologies |
 |----------|-------------|
 | **🚀 API Framework** | FastAPI, Uvicorn, Pydantic |
-| **🧠 AI/ML** | LangChain, OpenAI SDK, Azure AI SDK |
+| **🧠 AI/ML** | Microsoft Agent Framework, Azure AI Foundry, OpenAI SDK, Azure AI SDK |
 | **☁️ Azure Services** | Azure SDK (Blob, Cosmos, Document Intelligence, Key Vault) |
 | **📱 Frontend** | Next.js 15, React, Tailwind CSS, shadcn/ui |
 | **📄 Document Processing** | PyMuPDF, Pillow, PyPDF2 |
@@ -900,9 +902,9 @@ Contributors will be recognized in:
 ### 🔗 Additional Resources
 
 - **📖 Azure Document Intelligence**: [Official Documentation](https://docs.microsoft.com/azure/applied-ai-services/form-recognizer/)
-- **🤖 Azure OpenAI**: [Service Documentation](https://docs.microsoft.com/azure/cognitive-services/openai/)
+- **🤖 Azure AI Foundry**: [Service Documentation](https://learn.microsoft.com/azure/ai-foundry/)
 - **⚡ FastAPI**: [Framework Documentation](https://fastapi.tiangolo.com/)
-- **🐍 LangChain**: [Integration Guides](https://python.langchain.com/)
+- **🤝 Microsoft Agent Framework**: [Documentation](https://learn.microsoft.com/agent-framework/)
 
 ---
 

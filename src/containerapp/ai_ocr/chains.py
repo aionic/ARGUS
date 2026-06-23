@@ -1,9 +1,16 @@
-from openai import AzureOpenAI
 import logging
 import json
 import re
-from typing import List, Any, Dict, Optional
+from typing import List, Any, Dict
 from ai_ocr.azure.config import get_config
+from ai_ocr.agents import run_chat_sync, user_message, text_content, image_content
+
+
+class _Message:
+    """Lightweight stand-in for the OpenAI message object (exposes `.content`)."""
+
+    def __init__(self, content: str):
+        self.content = content
 
 def clean_json_response(raw_content: str) -> str:
     """
@@ -91,16 +98,7 @@ def clean_json_response(raw_content: str) -> str:
         logging.error(f"Error cleaning JSON: {e}")
         return ""
 
-def get_client(cosmos_config_container=None):
-    config = get_config(cosmos_config_container)
-    return AzureOpenAI(
-        azure_ad_token_provider=config["azure_openai_token_provider"],
-        api_version=config["openai_api_version"],
-        azure_endpoint=config["openai_api_endpoint"]
-    )
-
 def get_structured_data(markdown_content: str, prompt: str, json_schema: str, images: List[str] = [], cosmos_config_container=None) -> Any:
-    client = get_client(cosmos_config_container)
     config = get_config(cosmos_config_container)
     
     # Determine what input modalities we have
@@ -183,45 +181,33 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
     ⚠️ IMPORTANT: Return ONLY valid JSON, nothing else. No explanations, no markdown formatting, no text outside the JSON.
     """
 
-    messages = [
-        {"role": "user", "content": system_content}
-    ]
-    
+    contents = []
+
     # Add text content if available
     if has_text:
-        messages.append({"role": "user", "content": f"Here is the Document content (in markdown format):\n{markdown_content}"})
-    
-    # Add images if available  
+        contents.append(text_content(f"Here is the Document content (in markdown format):\n{markdown_content}"))
+
+    # Add images if available
     if has_images:
-        messages.append({"role": "user", "content": "Here are the images from the document:"})
+        contents.append(text_content("Here are the images from the document:"))
         for img in images:
-            messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{img}"}
-                    }
-                ]
-            })
+            contents.append(image_content(img))
+
+    messages = [user_message(contents)]
 
     # Log the prompt being sent for debugging
-    logging.info(f"GPT Extraction Prompt Debug:")
+    logging.info("GPT Extraction Prompt Debug:")
     logging.info(f"  - Has text: {has_text}")
     logging.info(f"  - Has images: {has_images}")
-    logging.info(f"  - Message count: {len(messages)}")
+    logging.info(f"  - Content part count: {len(contents)}")
     logging.info(f"  - Custom prompt: {prompt}")
     logging.info(f"  - Model: {config['openai_model_deployment']}")
-    logging.info(f"  - Using JSON mode: {'gpt-4' in config['openai_model_deployment'].lower()}")
 
     try:
-        response = client.chat.completions.create(
-            model=config["openai_model_deployment"],
-            messages=messages
-        )
-        
-        raw_content = response.choices[0].message.content
-        finish_reason = response.choices[0].finish_reason
+        result = run_chat_sync(messages, instructions=system_content)
+
+        raw_content = result.text
+        finish_reason = result.finish_reason
         
         logging.info(f"GPT Raw Response: {raw_content[:500]}...")  # Log first 500 chars
         logging.info(f"GPT Finish Reason: {finish_reason}")
@@ -247,14 +233,13 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
                     "truncated": True
                 }
             }
-            response.choices[0].message.content = json.dumps(error_response)
-            return response.choices[0].message
+            return _Message(json.dumps(error_response))
         
         # Try to parse as JSON to validate
         try:
-            parsed_json = json.loads(raw_content)
+            json.loads(raw_content)
             logging.info("GPT response successfully parsed as JSON")
-            return response.choices[0].message
+            return _Message(raw_content)
         except json.JSONDecodeError as json_error:
             logging.error(f"GPT returned invalid JSON: {json_error}")
             logging.error(f"Raw content: {raw_content}")
@@ -291,8 +276,7 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
                         "likely_truncated": True
                     }
                 }
-                response.choices[0].message.content = json.dumps(error_response)
-                return response.choices[0].message
+                return _Message(json.dumps(error_response))
             
             # Multiple fallback strategies for JSON cleaning
             cleanup_strategies = [
@@ -309,8 +293,7 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
                         json.loads(cleaned_content)  # Validate it parses
                         logging.info(f"Successfully cleaned JSON using strategy {i+1}")
                         # Create a new message object with cleaned content
-                        response.choices[0].message.content = cleaned_content
-                        return response.choices[0].message
+                        return _Message(cleaned_content)
                 except (json.JSONDecodeError, Exception) as cleanup_error:
                     logging.warning(f"Cleanup strategy {i+1} failed: {cleanup_error}")
                     continue
@@ -338,8 +321,7 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
                     "all_cleanup_failed": True
                 }
             }
-            response.choices[0].message.content = json.dumps(error_response)
-            return response.choices[0].message
+            return _Message(json.dumps(error_response))
             
     except Exception as e:
         logging.error(f"GPT API call failed: {e}")
@@ -347,16 +329,9 @@ def get_structured_data(markdown_content: str, prompt: str, json_schema: str, im
             "error": "GPT API call failed",
             "exception": str(e)
         }
-        # Create a mock response object
-        class MockMessage:
-            def __init__(self, content):
-                self.content = content
-        return MockMessage(json.dumps(error_response))
+        return _Message(json.dumps(error_response))
 
 def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dict, json_schema: str, cosmos_config_container=None) -> Dict:
-    client = get_client(cosmos_config_container)
-    config = get_config(cosmos_config_container)
-    
     system_content = f"""
     You are an AI assistant tasked with evaluating extracted data from a document.
 
@@ -399,33 +374,20 @@ def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dic
     {json_schema}
     """
 
-    messages = [
-        {"role": "user", "content": system_content},
-        {"role": "user", "content": f"Here is the extracted data:\n{json.dumps(extracted_data, indent=2)}"}
-    ]
+    contents = [text_content(f"Here is the extracted data:\n{json.dumps(extracted_data, indent=2)}")]
 
     if images:
-        messages.append({"role": "user", "content": "Here are the images from the document:"})
+        contents.append(text_content("Here are the images from the document:"))
         for img in images:
-            messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{img}"}
-                    }
-                ]
-            })
+            contents.append(image_content(img))
+
+    messages = [user_message(contents)]
 
     try:
-        response = client.chat.completions.create(
-            model=config["openai_model_deployment"],
-            messages=messages,
-            seed=0
-        )
-        
-        raw_content = response.choices[0].message.content
-        finish_reason = response.choices[0].finish_reason
+        result = run_chat_sync(messages, instructions=system_content, seed=0)
+
+        raw_content = result.text
+        finish_reason = result.finish_reason
         
         logging.info(f"GPT Evaluation Raw Response: {raw_content[:300]}...")
         logging.info(f"GPT Evaluation Finish Reason: {finish_reason}")
@@ -534,22 +496,12 @@ def perform_gpt_evaluation_and_enrichment(images: List[str], extracted_data: Dic
         }
 
 def get_summary_with_gpt(mkd_output_json, cosmos_config_container=None) -> Any:
-    client = get_client(cosmos_config_container)
-    config = get_config(cosmos_config_container)
-    
     reasoning_prompt = """
     Use the provided data represented in the schema to produce a summary in natural language. 
     The format should be a few sentences summary of the document.
     """
-    messages = [
-        {"role": "user", "content": reasoning_prompt},
-        {"role": "user", "content": json.dumps(mkd_output_json)}
-    ]
+    messages = [user_message([text_content(json.dumps(mkd_output_json))])]
 
-    response = client.chat.completions.create(
-        model=config["openai_model_deployment"],
-        messages=messages,
-        seed=0
-    )
+    result = run_chat_sync(messages, instructions=reasoning_prompt, seed=0)
 
-    return response.choices[0].message
+    return _Message(result.text)

@@ -133,6 +133,8 @@ module aiServices 'modules/ai-services.bicep' = {
     azureOpenaiModelDeploymentName: azureOpenaiModelDeploymentName
     privateEndpointsSubnetId: network.outputs.privateEndpointsSubnetId
     privateDnsZoneOpenAIId: network.outputs.privateDnsZoneOpenAIId
+    privateDnsZoneCognitiveServicesId: network.outputs.privateDnsZoneCognitiveServicesId
+    privateDnsZoneAIServicesId: network.outputs.privateDnsZoneAIServicesId
   }
 }
 
@@ -175,6 +177,7 @@ module containerApps 'modules/container-apps.bicep' = {
     cosmosConfigContainerName: cosmos.outputs.cosmosConfigContainerName
     documentIntelligenceEndpoint: docIntel.outputs.documentIntelligenceEndpoint
     aiServicesEndpoint: aiServices.outputs.aiServicesEndpoint
+    foundryProjectEndpoint: aiServices.outputs.foundryProjectEndpoint
     azureOpenaiModelDeploymentName: azureOpenaiModelDeploymentName
     keyVaultUri: keyVault.outputs.keyVaultUri
     apiKeySecretUri: keyVault.outputs.apiKeySecretUri
@@ -196,6 +199,7 @@ module roleAssignments 'modules/role-assignments.bicep' = {
     cosmosAccountName: cosmosDbAccountName
     documentIntelligenceId: docIntel.outputs.documentIntelligenceId
     aiServicesId: aiServices.outputs.aiServicesId
+    foundryProjectName: aiServices.outputs.foundryProjectName
     keyVaultId: keyVault.outputs.keyVaultId
   }
 }
@@ -239,6 +243,7 @@ output COSMOS_DOCUMENTS_CONTAINER_NAME string = cosmos.outputs.cosmosContainerNa
 output COSMOS_CONFIG_CONTAINER_NAME string = cosmos.outputs.cosmosConfigContainerName
 output DOCUMENT_INTELLIGENCE_ENDPOINT string = docIntel.outputs.documentIntelligenceEndpoint
 output AZURE_OPENAI_ENDPOINT string = aiServices.outputs.aiServicesEndpoint
+output AZURE_AI_PROJECT_ENDPOINT string = aiServices.outputs.foundryProjectEndpoint
 output AZURE_OPENAI_MODEL_DEPLOYMENT_NAME string = azureOpenaiModelDeploymentName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output AZURE_KEY_VAULT_URI string = keyVault.outputs.keyVaultUri

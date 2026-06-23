@@ -18,9 +18,8 @@ from mcp.types import (
 )
 
 from dependencies import get_data_container, get_conf_container, get_blob_service_client
-from ai_ocr.process import connect_to_cosmos, fetch_model_prompt_and_schema
-from ai_ocr.azure.config import get_config
-from openai import AzureOpenAI
+from ai_ocr.process import fetch_model_prompt_and_schema
+from ai_ocr.agents import run_chat, user_message, text_content
 
 logger = logging.getLogger(__name__)
 
@@ -493,32 +492,17 @@ DOCUMENT CONTEXT:
 
 Answer the user's question based on this document context."""
 
-        # Get config and call OpenAI
-        _, cosmos_config_container = connect_to_cosmos()
-        config = get_config(cosmos_config_container)
-        
-        client = AzureOpenAI(
-            azure_ad_token_provider=config["azure_openai_token_provider"],
-            api_version=config["openai_api_version"],
-            azure_endpoint=config["openai_api_endpoint"]
+        # Run the chat turn via the Microsoft Agent Framework
+        result_chat = await run_chat(
+            [user_message([text_content(message)])],
+            instructions=system_prompt,
         )
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message}
-        ]
-        
-        response = client.chat.completions.create(
-            model=config["openai_model_deployment"],
-            messages=messages
-        )
-        
-        assistant_message = response.choices[0].message.content
-        
+
+        assistant_message = result_chat.text
+
         result = {
             "response": assistant_message,
             "document_id": document_id,
-            "tokens_used": response.usage.total_tokens if response.usage else None
         }
         
         return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]

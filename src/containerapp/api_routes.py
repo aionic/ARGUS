@@ -8,11 +8,10 @@ import logging
 import os
 import traceback
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Annotated
 
 from fastapi import Request, BackgroundTasks, HTTPException
 from azure.identity import DefaultAzureCredential
-from openai import AzureOpenAI
 
 from models import EventGridEvent
 from blob_processing import process_blob_event
@@ -25,7 +24,7 @@ from dependencies import (
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'functionapp'))
 from ai_ocr.process import connect_to_cosmos, fetch_model_prompt_and_schema
-from ai_ocr.azure.config import get_config
+from ai_ocr.agents import run_chat, user_message, assistant_message, text_content
 
 logger = logging.getLogger(__name__)
 
@@ -548,45 +547,22 @@ DOCUMENT CONTEXT:
 
 Please answer the user's question based on this document context."""
 
-        # Get Azure OpenAI configuration
-        _, cosmos_config_container = connect_to_cosmos()
-        config = get_config(cosmos_config_container)
-        
-        # Initialize OpenAI client
-        client = AzureOpenAI(
-            azure_ad_token_provider=config["azure_openai_token_provider"],
-            api_version=config["openai_api_version"],
-            azure_endpoint=config["openai_api_endpoint"]
+        # Run the chat turn via Microsoft Agent Framework
+        result = await run_chat(
+            [user_message([text_content(message)])],
+            instructions=system_prompt,
         )
-        
-        # Prepare messages for the chat
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message}
-        ]
-        
-        # Make the API call
-        response = client.chat.completions.create(
-            model=config["openai_model_deployment"],
-            messages=messages
-        )
-        
-        # Extract the response
-        assistant_message = response.choices[0].message.content
-        
+
+        assistant_message = result.text
+        finish_reason = result.finish_reason
+
         # Check for truncation
-        finish_reason = response.choices[0].finish_reason
         if finish_reason == "length":
             assistant_message += "\n\n[Note: Response was truncated due to length limits. Please ask for more specific details if needed.]"
-        
+
         return {
             "response": assistant_message,
             "finish_reason": finish_reason,
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
-            }
         }
         
     except HTTPException:
@@ -597,10 +573,125 @@ Please answer the user's question based on this document context."""
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
 
 
+async def argus_list_documents(
+    dataset: Annotated[str, "Filter by dataset name"] = "",
+    status: Annotated[str, "Filter by status (pending, processing, completed, failed)"] = "",
+    limit: Annotated[int, "Maximum number of documents to return"] = 50,
+) -> Any:
+    """List all processed documents with optional filtering by dataset or status."""
+    args: Dict[str, Any] = {"limit": limit}
+    if dataset:
+        args["dataset"] = dataset
+    if status:
+        args["status"] = status
+    return await _execute_mcp_tool("argus_list_documents", args)
+
+
+async def argus_get_document(
+    document_id: Annotated[str, "The unique identifier of the document"],
+) -> Any:
+    """Get detailed information about a specific document including OCR text, extracted data, and evaluation results."""
+    return await _execute_mcp_tool("argus_get_document", {"document_id": document_id})
+
+
+async def argus_chat_with_document(
+    document_id: Annotated[str, "The document to chat about"],
+    question: Annotated[str, "Your question about the document"],
+) -> Any:
+    """Ask natural language questions about a specific document's content."""
+    return await _execute_mcp_tool(
+        "argus_chat_with_document", {"document_id": document_id, "question": question}
+    )
+
+
+async def argus_list_datasets() -> Any:
+    """List all available dataset configurations in ARGUS."""
+    return await _execute_mcp_tool("argus_list_datasets", {})
+
+
+async def argus_get_dataset_config(
+    dataset_name: Annotated[str, "The name of the dataset"],
+) -> Any:
+    """Get the configuration for a specific dataset including system prompt and output schema."""
+    return await _execute_mcp_tool("argus_get_dataset_config", {"dataset_name": dataset_name})
+
+
+async def argus_search_documents(
+    query: Annotated[str, "Search keyword or phrase"],
+    dataset: Annotated[str, "Limit search to specific dataset"] = "",
+    limit: Annotated[int, "Maximum results"] = 20,
+) -> Any:
+    """Search documents by filename or content keywords."""
+    args: Dict[str, Any] = {"query": query, "limit": limit}
+    if dataset:
+        args["dataset"] = dataset
+    return await _execute_mcp_tool("argus_search_documents", args)
+
+
+async def argus_get_extraction(
+    document_id: Annotated[str, "The document ID"],
+) -> Any:
+    """Get just the extracted structured data from a document."""
+    return await _execute_mcp_tool("argus_get_extraction", {"document_id": document_id})
+
+
+async def argus_process_document_url(
+    blob_url: Annotated[str, "Full Azure Blob Storage URL"],
+    dataset: Annotated[str, "Dataset to use"] = "default-dataset",
+) -> Any:
+    """Manually queue a document for processing. NOTE: Only use this for RE-PROCESSING existing documents or processing documents uploaded through external means. Files uploaded through this chat are automatically processed - do not call this tool for newly uploaded attachments."""
+    return await _execute_mcp_tool(
+        "argus_process_document_url", {"blob_url": blob_url, "dataset": dataset}
+    )
+
+
+async def argus_get_upload_url(
+    filename: Annotated[str, "Name for the uploaded file"],
+    dataset: Annotated[str, "Target dataset"] = "default-dataset",
+) -> Any:
+    """Get a pre-signed SAS URL for uploading a document to ARGUS."""
+    return await _execute_mcp_tool(
+        "argus_get_upload_url", {"filename": filename, "dataset": dataset}
+    )
+
+
+async def argus_create_dataset(
+    dataset_name: Annotated[str, "Unique name for the dataset (alphanumeric and hyphens only)"],
+    system_prompt: Annotated[str, "Instructions for the AI on how to extract data from documents in this dataset"],
+    output_schema: Annotated[Dict[str, Any], "JSON schema defining the structure of extracted data. Use empty strings as placeholders for values."],
+    max_pages_per_chunk: Annotated[int, "Maximum pages to process per chunk"] = 10,
+) -> Any:
+    """Create a new dataset configuration with a custom system prompt and output schema for document extraction."""
+    return await _execute_mcp_tool(
+        "argus_create_dataset",
+        {
+            "dataset_name": dataset_name,
+            "system_prompt": system_prompt,
+            "output_schema": output_schema,
+            "max_pages_per_chunk": max_pages_per_chunk,
+        },
+    )
+
+
+# Agent Framework tool set exposed by the MCP-powered chat endpoint.
+MCP_CHAT_TOOLS = [
+    argus_list_documents,
+    argus_get_document,
+    argus_chat_with_document,
+    argus_list_datasets,
+    argus_get_dataset_config,
+    argus_search_documents,
+    argus_get_extraction,
+    argus_process_document_url,
+    argus_get_upload_url,
+    argus_create_dataset,
+]
+
+
 async def mcp_chat(request: Request):
     """
     MCP-powered chat endpoint with tool calling capabilities.
-    Uses Azure OpenAI with function calling to execute ARGUS MCP tools.
+    Uses the Microsoft Agent Framework with auto tool-calling to execute ARGUS MCP tools.
     """
     try:
         data = await request.json()
@@ -611,173 +702,7 @@ async def mcp_chat(request: Request):
         if not message:
             raise HTTPException(status_code=400, detail="message is required")
         
-        # Get Azure OpenAI configuration
-        _, cosmos_config_container = connect_to_cosmos()
-        config = get_config(cosmos_config_container)
-        
-        if not config.get("openai_api_endpoint"):
-            raise HTTPException(status_code=503, detail="Azure OpenAI not configured")
-        
-        # Initialize OpenAI client
-        client = AzureOpenAI(
-            azure_ad_token_provider=config["azure_openai_token_provider"],
-            api_version=config["openai_api_version"],
-            azure_endpoint=config["openai_api_endpoint"]
-        )
-        
-        # Define the tools (MCP tools as OpenAI functions)
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_list_documents",
-                    "description": "List all processed documents with optional filtering by dataset or status",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "dataset": {"type": "string", "description": "Filter by dataset name"},
-                            "status": {"type": "string", "description": "Filter by status (pending, processing, completed, failed)"},
-                            "limit": {"type": "integer", "description": "Maximum number of documents to return", "default": 50}
-                        },
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_get_document",
-                    "description": "Get detailed information about a specific document including OCR text, extracted data, and evaluation results",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "document_id": {"type": "string", "description": "The unique identifier of the document"}
-                        },
-                        "required": ["document_id"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_chat_with_document",
-                    "description": "Ask natural language questions about a specific document's content",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "document_id": {"type": "string", "description": "The document to chat about"},
-                            "question": {"type": "string", "description": "Your question about the document"}
-                        },
-                        "required": ["document_id", "question"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_list_datasets",
-                    "description": "List all available dataset configurations in ARGUS",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_get_dataset_config",
-                    "description": "Get the configuration for a specific dataset including system prompt and output schema",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "dataset_name": {"type": "string", "description": "The name of the dataset"}
-                        },
-                        "required": ["dataset_name"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_search_documents",
-                    "description": "Search documents by filename or content keywords",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "Search keyword or phrase"},
-                            "dataset": {"type": "string", "description": "Limit search to specific dataset"},
-                            "limit": {"type": "integer", "description": "Maximum results", "default": 20}
-                        },
-                        "required": ["query"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_get_extraction",
-                    "description": "Get just the extracted structured data from a document",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "document_id": {"type": "string", "description": "The document ID"}
-                        },
-                        "required": ["document_id"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_process_document_url",
-                    "description": "Manually queue a document for processing. NOTE: Only use this for RE-PROCESSING existing documents or processing documents uploaded through external means. Files uploaded through this chat are automatically processed - do not call this tool for newly uploaded attachments.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "blob_url": {"type": "string", "description": "Full Azure Blob Storage URL"},
-                            "dataset": {"type": "string", "description": "Dataset to use", "default": "default-dataset"}
-                        },
-                        "required": ["blob_url"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_get_upload_url",
-                    "description": "Get a pre-signed SAS URL for uploading a document to ARGUS",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "filename": {"type": "string", "description": "Name for the uploaded file"},
-                            "dataset": {"type": "string", "description": "Target dataset", "default": "default-dataset"}
-                        },
-                        "required": ["filename"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "argus_create_dataset",
-                    "description": "Create a new dataset configuration with a custom system prompt and output schema for document extraction",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "dataset_name": {"type": "string", "description": "Unique name for the dataset (alphanumeric and hyphens only)"},
-                            "system_prompt": {"type": "string", "description": "Instructions for the AI on how to extract data from documents in this dataset"},
-                            "output_schema": {"type": "object", "description": "JSON schema defining the structure of extracted data. Use empty strings as placeholders for values."},
-                            "max_pages_per_chunk": {"type": "integer", "description": "Maximum pages to process per chunk", "default": 10}
-                        },
-                        "required": ["dataset_name", "system_prompt", "output_schema"]
-                    }
-                }
-            }
-        ]
-        
-        # Build system prompt
+        # Build the ARGUS assistant system prompt
         system_prompt = """You are ARGUS AI Assistant, a helpful AI that helps users interact with the ARGUS Document Intelligence Platform.
 
 You have access to ARGUS tools that allow you to:
@@ -793,17 +718,19 @@ Be helpful, concise, and accurate. If you need to look up information, use the t
 IMPORTANT: When users attach and upload files through this chat, the files are AUTOMATICALLY queued for processing by the system. DO NOT call argus_process_document_url after a file upload - the processing is already triggered automatically. Only use argus_process_document_url if you need to re-process an existing document or process a document that was uploaded through other means.
 
 If the user has attached files, inform them that the files have been uploaded and will be automatically processed. They can check the status later using the list_documents or get_document tools."""
-        
-        # Build messages
-        messages = [{"role": "system", "content": system_prompt}]
-        
-        # Add chat history
+
+        # Assemble the conversation for the Agent Framework
+        af_messages = []
         for hist in chat_history[-10:]:  # Last 10 messages
-            messages.append({
-                "role": hist.get("role", "user"),
-                "content": hist.get("content", "")
-            })
-        
+            content_text = hist.get("content", "")
+            if not content_text:
+                continue
+            role = (hist.get("role") or "user").lower()
+            if role == "assistant":
+                af_messages.append(assistant_message([text_content(content_text)]))
+            else:
+                af_messages.append(user_message([text_content(content_text)]))
+
         # Add attachment context if any
         if attachments:
             attachment_details = []
@@ -814,80 +741,22 @@ If the user has attached files, inform them that the files have been uploaded an
                 attachment_details.append(detail)
             attachment_info = "\n\n[User has uploaded the following files which are now being automatically processed:\n" + "\n".join(attachment_details) + "\n\nYou can use the document_id to check processing status with argus_get_document.]"
             message = message + attachment_info
-        
-        messages.append({"role": "user", "content": message})
-        
-        # Make the API call with tools
-        response = client.chat.completions.create(
-            model=config["openai_model_deployment"],
-            messages=messages,
-            tools=tools,
-            tool_choice="auto"
+
+        af_messages.append(user_message([text_content(message)]))
+
+        # Run the agent with ARGUS tools (Agent Framework auto-invokes tool calls)
+        result = await run_chat(
+            af_messages,
+            instructions=system_prompt,
+            tools=MCP_CHAT_TOOLS,
         )
-        
-        assistant_message = response.choices[0].message
-        tool_calls_made = []
-        
-        # Handle tool calls (iteratively if needed)
-        max_iterations = 5
-        iteration = 0
-        
-        while assistant_message.tool_calls and iteration < max_iterations:
-            iteration += 1
-            
-            # Add the assistant message ONCE before processing all tool calls
-            messages.append(assistant_message)
-            
-            # Collect all tool responses
-            tool_responses = []
-            
-            # Process each tool call
-            for tool_call in assistant_message.tool_calls:
-                function_name = tool_call.function.name
-                function_args = json.loads(tool_call.function.arguments)
-                
-                logger.info(f"MCP Chat executing tool: {function_name} with args: {function_args}")
-                
-                # Execute the tool
-                tool_result = await _execute_mcp_tool(function_name, function_args)
-                
-                tool_calls_made.append({
-                    "tool": function_name,
-                    "arguments": function_args,
-                    "result_preview": str(tool_result)[:200] + "..." if len(str(tool_result)) > 200 else str(tool_result)
-                })
-                
-                # Collect tool response
-                tool_responses.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(tool_result) if isinstance(tool_result, (dict, list)) else str(tool_result)
-                })
-            
-            # Add ALL tool responses after the assistant message
-            messages.extend(tool_responses)
-            
-            # Get the next response
-            response = client.chat.completions.create(
-                model=config["openai_model_deployment"],
-                messages=messages,
-                tools=tools,
-                tool_choice="auto"
-            )
-            assistant_message = response.choices[0].message
-        
-        # Get final response content
-        final_response = assistant_message.content or "I apologize, but I couldn't generate a response. Please try again."
-        
+
+        final_response = result.text or "I apologize, but I couldn't generate a response. Please try again."
+
         return {
             "response": final_response,
-            "tool_calls": tool_calls_made,
-            "finish_reason": response.choices[0].finish_reason,
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
-            }
+            "tool_calls": result.tool_calls,
+            "finish_reason": result.finish_reason,
         }
         
     except HTTPException:

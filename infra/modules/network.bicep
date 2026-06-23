@@ -60,6 +60,13 @@ resource privateDnsZoneOpenAI 'Microsoft.Network/privateDnsZones@2020-06-01' = {
   tags: tags
 }
 
+// AI Foundry project endpoints resolve under services.ai.azure.com
+resource privateDnsZoneAIServices 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+  name: 'privatelink.services.ai.azure.com'
+  location: 'global'
+  tags: tags
+}
+
 resource privateDnsZoneKeyVault 'Microsoft.Network/privateDnsZones@2020-06-01' = {
   name: 'privatelink.vaultcore.azure.net'
   location: 'global'
@@ -107,6 +114,16 @@ resource vnetLinkOpenAI 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2
   }
 }
 
+resource vnetLinkAIServices 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+  parent: privateDnsZoneAIServices
+  name: 'link-aiservices'
+  location: 'global'
+  properties: {
+    virtualNetwork: { id: vnet.id }
+    registrationEnabled: false
+  }
+}
+
 resource vnetLinkKeyVault 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
   parent: privateDnsZoneKeyVault
   name: 'link-keyvault'
@@ -125,4 +142,5 @@ output privateDnsZoneBlobId string = privateDnsZoneBlob.id
 output privateDnsZoneCosmosId string = privateDnsZoneCosmos.id
 output privateDnsZoneCognitiveServicesId string = privateDnsZoneCognitiveServices.id
 output privateDnsZoneOpenAIId string = privateDnsZoneOpenAI.id
+output privateDnsZoneAIServicesId string = privateDnsZoneAIServices.id
 output privateDnsZoneKeyVaultId string = privateDnsZoneKeyVault.id

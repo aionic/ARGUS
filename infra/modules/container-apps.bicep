@@ -35,6 +35,7 @@ param documentIntelligenceEndpoint string
 
 // AI Services
 param aiServicesEndpoint string
+param foundryProjectEndpoint string
 param azureOpenaiModelDeploymentName string
 
 // Key Vault
@@ -121,6 +122,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'COSMOS_CONFIG_CONTAINER_NAME', value: cosmosConfigContainerName }
             { name: 'DOCUMENT_INTELLIGENCE_ENDPOINT', value: documentIntelligenceEndpoint }
             { name: 'AZURE_OPENAI_ENDPOINT', value: aiServicesEndpoint }
+            { name: 'AZURE_AI_PROJECT_ENDPOINT', value: foundryProjectEndpoint }
             { name: 'AZURE_OPENAI_MODEL_DEPLOYMENT_NAME', value: azureOpenaiModelDeploymentName }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: applicationInsightsConnectionString }
             { name: 'AZURE_CLIENT_ID', value: userManagedIdentityClientId }

@@ -33,8 +33,8 @@
         ]
       }
     },
-    // Add your own post creation commands here
-    // Add the Python packages that you use to requirements.txt
-    "postCreateCommand": "sudo apt update && pip install --upgrade pip && pip install -r frontend/requirements.txt"
+    // Add your own post creation commands here.
+    // Dependencies are managed with uv (https://docs.astral.sh/uv/) from src/containerapp/pyproject.toml
+    "postCreateCommand": "curl -LsSf https://astral.sh/uv/install.sh | sh && uv sync --project src/containerapp"
   }
   

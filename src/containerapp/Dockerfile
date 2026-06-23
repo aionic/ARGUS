@@ -1,13 +1,17 @@
-# Multi-stage build for production Container App
-FROM python:3.11-slim as builder
+# Multi-stage build for production Container App (uv + Python 3.13)
+FROM python:3.13-slim AS builder
+
+# uv: fast, reproducible dependency management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
 
-# Install system dependencies
+# Install system build dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -15,16 +19,15 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create and activate virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies first (cached layer) using the locked manifest
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-dev
 
 # Production stage
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -53,10 +56,9 @@ COPY logic_app_manager.py .
 COPY blob_processing.py .
 COPY api_routes.py .
 COPY mcp_server.py .
-COPY requirements.txt .
+COPY pyproject.toml uv.lock ./
 
-# Copy the original AI OCR modules from the functionapp directory
-# This will be handled by the deployment script to copy the files first
+# Copy the AI OCR modules
 COPY ai_ocr ./ai_ocr
 
 # Copy example datasets for schema and prompt loading

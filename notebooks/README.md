@@ -10,15 +10,23 @@ Create a .env file in the notebook folder with these keys:
 
 DOCUMENT_INTELLIGENCE_ENDPOINT=
 DOCUMENT_INTELLIGENCE_KEY=
-AZURE_OPENAI_KEY=
-AZURE_OPENAI_ENDPOINT=
+DOCUMENT_INTELLIGENCE_ENDPOINT=
+DOCUMENT_INTELLIGENCE_KEY=
+AZURE_AI_PROJECT_ENDPOINT=
 AZURE_OPENAI_MODEL_DEPLOYMENT_NAME=
 
 > Notes:
 > - The document-intelligence resource needs to use the markdown preview feature (limited regions: West EU and East US at the moment). 
-> - The Azure OpenAI model needs to be vision capable i.e. GPT-4T-0125, 0409 or Omni
+> - The model is accessed through Azure AI Foundry via the Microsoft Agent Framework using `DefaultAzureCredential` (run `az login` locally) — no API key is required.
+> - The deployed model needs to be vision capable (e.g. GPT-4o / GPT-5.4).
 
-Install requirements.txt provided.
+The notebook imports `ai_ocr` (and `ai_ocr.agents`) from `src/containerapp`, so install that project's
+dependencies with [uv](https://docs.astral.sh/uv/) and run the notebook against its environment:
+
+```bash
+cd ../src/containerapp
+uv sync
+```
 
 
 ### Notebook flow

@@ -8,6 +8,7 @@ param storageAccountId string
 param cosmosAccountId string
 param documentIntelligenceId string
 param aiServicesId string
+param foundryProjectName string
 param keyVaultId string
 param cosmosAccountName string
 
@@ -71,6 +72,17 @@ resource aiServicesUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
+// ─── Azure AI User on the Foundry project (data-plane agent access) ───
+resource foundryProjectUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(userManagedIdentityPrincipalId, foundryProject.id, 'AzureAIUser')
+  scope: foundryProject
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+    principalId: userManagedIdentityPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // ─── Key Vault Secrets User (scoped to Key Vault) ───
 resource kvSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(userManagedIdentityPrincipalId, keyVaultId, 'KeyVaultSecretsUser')
@@ -123,6 +135,25 @@ resource userKvRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
+// ─── User dev access: Azure AI User on the Foundry project + OpenAI inference ───
+resource userFoundryProjectRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(foundryProject.id, azurePrincipalId, 'AzureAIUser')
+  scope: foundryProject
+  properties: {
+    principalId: azurePrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+  }
+}
+
+resource userAiServicesRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiServicesId, azurePrincipalId, 'CognitiveServicesOpenAIUser')
+  scope: aiServicesResource
+  properties: {
+    principalId: azurePrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+
 // Existing resource references for scoping
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: last(split(containerRegistryId, '/'))
@@ -142,6 +173,11 @@ resource documentIntelligence 'Microsoft.CognitiveServices/accounts@2024-10-01' 
 
 resource aiServicesResource 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = {
   name: last(split(aiServicesId, '/'))
+}
+
+resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview' existing = {
+  parent: aiServicesResource
+  name: foundryProjectName
 }
 
 resource keyVaultResource 'Microsoft.KeyVault/vaults@2023-07-01' existing = {

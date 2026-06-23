@@ -1,0 +1,58 @@
+[project]
+name = "argus-containerapp"
+version = "1.0.0"
+description = "ARGUS document-extraction backend (FastAPI) on Azure Container Apps, powered by Microsoft Agent Framework + Azure AI Foundry."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]==0.24.0",
+    "python-multipart==0.0.20",
+    "aiofiles==23.2.1",
+    # Azure SDKs
+    "azure-storage-blob==12.19.0",
+    "azure-identity==1.19.0",
+    "azure-cosmos==4.9.0",
+    "azure-mgmt-logic==10.0.0",
+    "azure-mgmt-resource==23.1.1",
+    "azure-ai-formrecognizer==3.3.3",
+    "azure-ai-documentintelligence==1.0.0",
+    "azure-cognitiveservices-vision-computervision==0.9.0",
+    "azure-ai-projects>=1.0.0",
+    # Microsoft Agent Framework (orchestration layer)
+    "agent-framework-core>=1.9.0",
+    "agent-framework-foundry>=1.8.2",
+    "agent-framework-openai>=1.8.2",
+    # LLM / OpenAI SDK (kept as a fallback chat client)
+    "openai>=1.99.0",
+    "tiktoken>=0.8.0",
+    # HTTP
+    "requests==2.31.0",
+    "httpx==0.27.0",
+    "requests-html==0.10.0",
+    # Document / image processing
+    "Pillow==11.0.0",
+    "PyMuPDF==1.25.1",
+    "PyPDF2==3.0.1",
+    # Data
+    "pandas==2.2.3",
+    "numpy>=1.26.0",
+    # Config
+    "python-dotenv==1.0.1",
+    # MCP (Model Context Protocol) support - Streamable HTTP transport
+    "mcp>=1.9.0",
+    "sse-starlette>=2.0.0",
+    "starlette>=0.27.0",
+    "anyio>=4.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    # Required by src/evaluators (fuzzy string evaluator) unit tests
+    "thefuzz>=0.22.0",
+]
+
+[tool.uv]
+package = false

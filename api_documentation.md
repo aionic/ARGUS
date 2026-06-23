@@ -538,12 +538,7 @@ Interactive chat endpoint for asking questions about processed documents.
 ```json
 {
   "response": "The total amount on this invoice is $1,250.00.",
-  "finish_reason": "stop",
-  "usage": {
-    "prompt_tokens": 456,
-    "completion_tokens": 23,
-    "total_tokens": 479
-  }
+  "finish_reason": "stop"
 }
 ```
 
@@ -980,12 +975,7 @@ MISTRAL_DOC_AI_KEY=your-mistral-api-key
 ```json
 {
   "response": "string",
-  "finish_reason": "stop | length | content_filter",
-  "usage": {
-    "prompt_tokens": "number",
-    "completion_tokens": "number", 
-    "total_tokens": "number"
-  }
+  "finish_reason": "stop | length | content_filter"
 }
 ```
 
@@ -1384,7 +1374,7 @@ curl -X PUT "http://your-container-app.azurecontainerapps.io/api/openai-settings
 - **Azure Cosmos DB**: Document storage and configuration
 - **Azure Blob Storage**: File storage with Event Grid integration
 - **Azure Logic Apps**: Automated workflow triggers
-- **Azure OpenAI**: AI processing for extraction and chat
+- **Azure AI Foundry**: GPT model inference via the Microsoft Agent Framework for extraction and chat
 
 ### Local Development Architecture  
 - **FastAPI Backend**: Local server with in-memory storage
@@ -1395,7 +1385,7 @@ curl -X PUT "http://your-container-app.azurecontainerapps.io/api/openai-settings
 1. **File Upload**: To Azure Blob Storage (production) or local endpoint (development)
 2. **Event Trigger**: Event Grid notification or manual API call
 3. **OCR Processing**: Azure Document Intelligence extracts text
-4. **AI Extraction**: Azure OpenAI processes text with custom prompts
+4. **AI Extraction**: Azure AI Foundry (via the Microsoft Agent Framework) processes text with custom prompts
 5. **Storage**: Results stored in Cosmos DB (production) or memory (local)
 6. **Chat Interface**: Interactive Q&A about processed documents
 

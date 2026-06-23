@@ -113,3 +113,43 @@ Successfully refactored the monolithic `main.py` file (1675 lines) into a modula
 - **Reduction**: ~125 lines (removal of duplicate imports and better organization)
 
 The refactoring maintains 100% API compatibility while providing a much more maintainable and organized codebase.
+
+---
+
+## Modernization: Microsoft Agent Framework + Azure AI Foundry + uv
+
+A follow-up modernization replaced the LLM orchestration, AI backend, and Python
+tooling. **No LangChain remains** in the codebase.
+
+### 🤝 Microsoft Agent Framework (orchestration)
+- All direct `openai.AzureOpenAI` / `chat.completions.create` calls were replaced by a
+  single shared agent layer in **`ai_ocr/agents/`**:
+  - `client.py` builds a cached Agent Framework chat client and exposes
+    `run_chat` (async) / `run_chat_sync` (worker-thread safe), plus message/content
+    builders (`user_message`, `assistant_message`, `text_content`, `image_content`).
+  - A persistent background event loop bridges the async-only Agent Framework to ARGUS's
+    synchronous processing threads without blocking the FastAPI event loop.
+- Migrated call sites:
+  - `ai_ocr/chains.py` — `get_structured_data`, `perform_gpt_evaluation_and_enrichment`,
+    `get_summary_with_gpt` (multimodal extraction, evaluation, summary).
+  - `api_routes.py` — `chat_with_document` and the MCP `mcp_chat` endpoint. The
+    hand-rolled OpenAI tool-calling loop was replaced by Agent Framework tools: the ARGUS
+    MCP tools are plain Python callables (`MCP_CHAT_TOOLS`) that the agent auto-invokes,
+    with schemas derived from type hints.
+  - `mcp_server.py` — `_handle_chat_with_document`.
+
+### 🏗️ Azure AI Foundry (AI backend)
+- `infra/modules/ai-services.bicep` now provisions an **AI Foundry account**
+  (`kind: 'AIServices'`, `allowProjectManagement: true`) with a child **project**, instead
+  of a classic `kind: 'OpenAI'` account.
+- The app authenticates to the **Foundry project endpoint** (`AZURE_AI_PROJECT_ENDPOINT`)
+  with managed identity via `FoundryChatClient`; it falls back to Azure OpenAI
+  (`OpenAIChatClient`) when no project endpoint is configured (e.g. local dev).
+- Private DNS (`privatelink.services.ai.azure.com`) and `Azure AI User` RBAC were added so
+  the project resolves and is callable over the existing private network.
+
+### 🐍 uv / Python 3.13 (tooling)
+- `requirements.txt` was replaced by **`pyproject.toml` + `uv.lock`**; the runtime targets
+  **Python 3.13**.
+- The `Dockerfile` is a multi-stage `python:3.13-slim` build using `uv sync --frozen`.
+- CI installs and runs everything through uv (`uv sync`, `uv run pytest`).
