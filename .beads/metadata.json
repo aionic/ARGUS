@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "argus",
+  "project_id": "90d72aaf-b12f-4bed-ac57-07aec5138bd0"
+}

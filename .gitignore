@@ -155,3 +155,8 @@ test-output/
 # Mac
 .DS_Store
 demo/.DS_Store
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
