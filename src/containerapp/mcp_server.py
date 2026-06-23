@@ -319,10 +319,10 @@ async def _handle_list_documents(arguments: dict) -> list[TextContent]:
                 "filename": item.get("file_name") or item.get("filename") or item.get("id", "").split("/")[-1],
                 "dataset": item.get("dataset", "default-dataset"),
                 "status": _get_document_status(item),
-                "created_at": item.get("request_timestamp"),
-                "num_pages": item.get("num_pages"),
+                "created_at": _get_document_timestamp(item),
+                "num_pages": item.get("num_pages") or item.get("properties", {}).get("num_pages"),
                 "has_extraction": bool(item.get("extracted_data", {}).get("gpt_extraction_output")),
-                "has_evaluation": bool(item.get("evaluation_results") or item.get("evaluation")),
+                "has_evaluation": bool(item.get("extracted_data", {}).get("gpt_extraction_output_with_evaluation")),
             }
             documents.append(doc)
 
@@ -360,13 +360,13 @@ async def _handle_get_document(arguments: dict) -> list[TextContent]:
             "filename": item.get("file_name") or item.get("filename"),
             "dataset": item.get("dataset", "default-dataset"),
             "status": _get_document_status(item),
-            "created_at": item.get("request_timestamp"),
-            "num_pages": item.get("num_pages"),
+            "created_at": _get_document_timestamp(item),
+            "num_pages": item.get("num_pages") or item.get("properties", {}).get("num_pages"),
             "processing_time": item.get("processing_time") or item.get("processing_times", {}).get("total"),
-            "ocr_text": item.get("ocr_response") or item.get("ocr_text"),
+            "ocr_text": item.get("extracted_data", {}).get("ocr_output") or item.get("ocr_response"),
             "gpt_extraction": item.get("extracted_data", {}).get("gpt_extraction_output"),
-            "evaluation": item.get("evaluation_results") or item.get("evaluation"),
-            "summary": item.get("summary"),
+            "evaluation": item.get("extracted_data", {}).get("gpt_extraction_output_with_evaluation"),
+            "summary": item.get("extracted_data", {}).get("gpt_summary_output") or item.get("summary"),
             "errors": item.get("errors"),
             "human_corrected": item.get("human_corrected", False),
             "corrections_count": len(item.get("corrections", [])),
@@ -676,6 +676,13 @@ def _get_document_status(item: dict) -> str:
     if state.get("ocr_completed") or state.get("gpt_extraction_completed"):
         return "processing"
     return "pending"
+
+
+def _get_document_timestamp(item: dict) -> str | None:
+    """Best-effort creation timestamp; documents store it at properties.request_timestamp."""
+    return (
+        item.get("request_timestamp") or item.get("properties", {}).get("request_timestamp") or item.get("created_at")
+    )
 
 
 async def _handle_get_upload_url(arguments: dict) -> list[TextContent]:

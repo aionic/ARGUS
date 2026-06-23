@@ -781,7 +781,7 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
                         "filename": item.get("file_name") or item.get("filename") or item.get("id", "").split("/")[-1],
                         "dataset": item.get("dataset", "default-dataset"),
                         "status": doc_status,
-                        "created_at": item.get("request_timestamp") or item.get("created_at"),
+                        "created_at": _get_document_timestamp(item),
                     }
                 )
 
@@ -1177,8 +1177,8 @@ async def list_documents(dataset: str = None):
                 "filename": item.get("file_name") or item.get("filename") or item.get("id", "").split("/")[-1],
                 "dataset": item.get("dataset", "default-dataset"),
                 "status": _get_document_status(item),
-                "created_at": item.get("request_timestamp") or item.get("created_at"),
-                "updated_at": item.get("updated_at") or item.get("request_timestamp"),
+                "created_at": _get_document_timestamp(item),
+                "updated_at": item.get("updated_at") or _get_document_timestamp(item),
                 "processing_time": item.get("processing_time") or item.get("processing_times", {}).get("total"),
                 "model": item.get("model"),
                 "ocr_text": item.get("ocr_response") or item.get("ocr_text"),
@@ -1214,6 +1214,13 @@ def _get_document_status(item: dict) -> str:
     return "pending"
 
 
+def _get_document_timestamp(item: dict) -> str | None:
+    """Best-effort creation timestamp; documents store it at properties.request_timestamp."""
+    return (
+        item.get("request_timestamp") or item.get("properties", {}).get("request_timestamp") or item.get("created_at")
+    )
+
+
 async def get_document(document_id: str):
     """Get a specific document by ID"""
     try:
@@ -1236,8 +1243,8 @@ async def get_document(document_id: str):
             "filename": item.get("file_name") or item.get("filename") or item.get("id", "").split("/")[-1],
             "dataset": item.get("dataset", "default-dataset"),
             "status": _get_document_status(item),
-            "created_at": item.get("request_timestamp") or item.get("created_at"),
-            "updated_at": item.get("updated_at") or item.get("request_timestamp"),
+            "created_at": _get_document_timestamp(item),
+            "updated_at": item.get("updated_at") or _get_document_timestamp(item),
             "processing_time": item.get("processing_time") or item.get("processing_times", {}).get("total"),
             "model": item.get("model"),
             "ocr_text": item.get("ocr_response") or item.get("ocr_text"),
