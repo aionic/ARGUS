@@ -37,8 +37,11 @@ logger = logging.getLogger(__name__)
 
 # Field name accepted by CU analyzer field schema.
 _NAME_RE = re.compile(r"[^a-zA-Z0-9_]")
-# Analyzer id pattern: ^[a-zA-Z0-9._-]{1,64}$
-_ANALYZER_ID_RE = re.compile(r"[^a-zA-Z0-9._-]")
+# Analyzer id pattern: ^[a-zA-Z0-9._]{1,64}$ (hyphens are NOT permitted).
+_ANALYZER_ID_RE = re.compile(r"[^a-zA-Z0-9._]")
+# Bump when the analyzer build contract changes (base analyzer, config, schema
+# mapping) so a fresh analyzer id is used instead of a previously failed one.
+_ANALYZER_VERSION = "v2"
 
 # Cache of analyzer ids we have already confirmed exist (per process).
 _ready_analyzers: set[str] = set()
@@ -67,7 +70,7 @@ def _cu_settings(cosmos_config_container=None) -> dict[str, Any]:
         # CU resource-level defaults are used.
         "completion_model": os.getenv("CONTENT_UNDERSTANDING_COMPLETION_MODEL"),
         "embedding_model": os.getenv("CONTENT_UNDERSTANDING_EMBEDDING_MODEL"),
-        "base_analyzer_id": os.getenv("CONTENT_UNDERSTANDING_BASE_ANALYZER", "prebuilt-documentAnalyzer"),
+        "base_analyzer_id": os.getenv("CONTENT_UNDERSTANDING_BASE_ANALYZER", "prebuilt-document"),
     }
 
 
@@ -139,8 +142,8 @@ def _build_field_schema(dataset_name: str, example_schema: dict[str, Any]) -> di
 def _analyzer_id(dataset_name: str, field_schema: dict[str, Any]) -> str:
     """Deterministic analyzer id embedding a hash of the schema."""
     schema_hash = hashlib.sha256(repr(field_schema).encode("utf-8")).hexdigest()[:10]
-    base = _ANALYZER_ID_RE.sub("-", f"argus-{dataset_name}").strip("-").lower()
-    return f"{base[:48]}-{schema_hash}"[:64]
+    base = _ANALYZER_ID_RE.sub("_", f"argus_{_ANALYZER_VERSION}_{dataset_name}").strip("_").lower()
+    return f"{base[:48]}_{schema_hash}"[:64]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -218,6 +221,46 @@ def _collect_confidence(cu_fields: dict[str, Any], prefix: str = "") -> dict[str
 # ─────────────────────────────────────────────────────────────────────────────
 # Analyzer lifecycle
 # ─────────────────────────────────────────────────────────────────────────────
+_defaults_set = False
+
+
+def _ensure_defaults(client: httpx.Client, settings: dict[str, Any]) -> None:
+    """Set the Content Understanding resource-level default model deployments.
+
+    Custom analyzers require resource defaults to be configured at least once via
+    ``PATCH /contentunderstanding/defaults``. This is idempotent and cached per
+    process. The completion (and optional embedding) deployments are taken from
+    ``CONTENT_UNDERSTANDING_COMPLETION_MODEL`` / ``CONTENT_UNDERSTANDING_EMBEDDING_MODEL``.
+    """
+    global _defaults_set
+    if _defaults_set:
+        return
+
+    completion = settings.get("completion_model")
+    embedding = settings.get("embedding_model")
+    if not completion and not embedding:
+        # Nothing to set; assume defaults were configured out of band.
+        _defaults_set = True
+        return
+
+    # Content Understanding maps default deployments by model name. Deployment
+    # names in this solution match the model names, so key == value.
+    model_deployments: dict[str, str] = {}
+    if completion:
+        model_deployments[completion] = completion
+    if embedding:
+        model_deployments[embedding] = embedding
+
+    url = f"{settings['endpoint']}/contentunderstanding/defaults?api-version={settings['api_version']}"
+    headers = _headers(settings)
+    headers["Content-Type"] = "application/merge-patch+json"
+    logger.info("Setting Content Understanding defaults: %s", model_deployments)
+    resp = client.patch(url, headers=headers, json={"modelDeployments": model_deployments})
+    if resp.status_code not in (200, 201, 204):
+        raise RuntimeError(f"Failed to set Content Understanding defaults: {resp.status_code} - {resp.text}")
+    _defaults_set = True
+
+
 def _ensure_analyzer(
     client: httpx.Client,
     settings: dict[str, Any],
@@ -228,15 +271,27 @@ def _ensure_analyzer(
     if analyzer_id in _ready_analyzers:
         return
 
+    _ensure_defaults(client, settings)
+
     base = settings["endpoint"]
     api_version = settings["api_version"]
     get_url = f"{base}/contentunderstanding/analyzers/{analyzer_id}?api-version={api_version}"
 
     existing = client.get(get_url, headers=_headers(settings, json_body=False))
     if existing.status_code == 200:
-        logger.info("Content Understanding analyzer '%s' already exists", analyzer_id)
-        _ready_analyzers.add(analyzer_id)
-        return
+        status = ""
+        try:
+            status = str(existing.json().get("status", "")).lower()
+        except (ValueError, KeyError):
+            status = ""
+        if status in ("", "ready", "succeeded", "active"):
+            logger.info("Content Understanding analyzer '%s' already exists", analyzer_id)
+            _ready_analyzers.add(analyzer_id)
+            return
+        # Analyzer exists in a non-usable (e.g. Failed) state. Delete it so the
+        # create-or-update below does not return the stale failure reason.
+        logger.warning("Deleting Content Understanding analyzer '%s' in state '%s'", analyzer_id, status)
+        client.delete(get_url, headers=_headers(settings, json_body=False))
 
     body: dict[str, Any] = {
         "description": field_schema.get("description", "ARGUS analyzer"),

@@ -48,6 +48,12 @@ param extractionBackend string = 'gpt'
 param enableImagePreprocessing bool = false
 param summaryModelDeploymentName string = ''
 
+@description('Content Understanding default completion model deployment name')
+param contentUnderstandingCompletionModel string = ''
+
+@description('Content Understanding default embedding model deployment name')
+param contentUnderstandingEmbeddingModel string = ''
+
 // Key Vault
 param keyVaultUri string
 
@@ -137,6 +143,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             // Content Understanding extraction backend
             { name: 'AZURE_CONTENT_UNDERSTANDING_ENDPOINT', value: contentUnderstandingEndpoint }
             { name: 'EXTRACTION_BACKEND', value: extractionBackend }
+            { name: 'CONTENT_UNDERSTANDING_COMPLETION_MODEL', value: contentUnderstandingCompletionModel }
+            { name: 'CONTENT_UNDERSTANDING_EMBEDDING_MODEL', value: contentUnderstandingEmbeddingModel }
             // Image quality preprocessing (OpenCV enhance_retry)
             { name: 'ENABLE_IMAGE_PREPROCESSING', value: toLower(string(enableImagePreprocessing)) }
             // Cost-effective summary model (empty = use main deployment)

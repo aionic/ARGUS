@@ -29,6 +29,9 @@ param enableImagePreprocessing bool = false
 @description('Deploy a cheaper OpenAI model for the summary stage cost experiment')
 param deploySummaryModel bool = true
 
+@description('Deploy an embedding model required by Content Understanding resource defaults')
+param deployEmbeddingModel bool = true
+
 @description('Experiment: deploy a Phi serverless model (verify regional availability first)')
 param deployPhiModel bool = false
 
@@ -152,6 +155,7 @@ module aiServices 'modules/ai-services.bicep' = {
     privateDnsZoneCognitiveServicesId: network.outputs.privateDnsZoneCognitiveServicesId
     privateDnsZoneAIServicesId: network.outputs.privateDnsZoneAIServicesId
     deploySummaryModel: deploySummaryModel
+    deployEmbeddingModel: deployEmbeddingModel
     deployPhiModel: deployPhiModel
   }
 }
@@ -201,6 +205,8 @@ module containerApps 'modules/container-apps.bicep' = {
     extractionBackend: extractionBackend
     enableImagePreprocessing: enableImagePreprocessing
     summaryModelDeploymentName: aiServices.outputs.summaryModelDeploymentName
+    contentUnderstandingCompletionModel: aiServices.outputs.summaryModelDeploymentName
+    contentUnderstandingEmbeddingModel: aiServices.outputs.embeddingModelDeploymentName
     keyVaultUri: keyVault.outputs.keyVaultUri
     apiKeySecretUri: keyVault.outputs.apiKeySecretUri
     containerAppsSubnetId: network.outputs.containerAppsSubnetId

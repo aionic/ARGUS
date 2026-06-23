@@ -29,6 +29,21 @@ param summaryModelCapacity int = 50
 @description('SKU for the cheaper summary model. gpt-4.1-mini is only offered as Standard (not GlobalStandard).')
 param summaryModelSku string = 'Standard'
 
+@description('Deploy a text embedding model. Required by the Content Understanding extraction backend (resource defaults).')
+param deployEmbeddingModel bool = true
+
+@description('Deployment name for the embedding model')
+param embeddingModelDeploymentName string = 'text-embedding-3-large'
+
+@description('Embedding model name')
+param embeddingModelName string = 'text-embedding-3-large'
+
+@description('Embedding model version')
+param embeddingModelVersion string = '1'
+
+@description('Capacity (TPM in thousands) for the embedding model')
+param embeddingModelCapacity int = 50
+
 @description('Experiment: deploy a Phi serverless model for cost comparison. Verify Phi availability in the region before enabling.')
 param deployPhiModel bool = false
 
@@ -123,6 +138,28 @@ resource summaryModelDeployment 'Microsoft.CognitiveServices/accounts/deployment
   }
 }
 
+// ─── Embedding model deployment (required by Content Understanding backend) ───
+resource embeddingModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = if (deployEmbeddingModel) {
+  parent: aiServices
+  name: embeddingModelDeploymentName
+  // Serialize after the summary deployment to avoid the account ETag/If-Match race.
+  dependsOn: [
+    modelDeployment
+    summaryModelDeployment
+  ]
+  sku: {
+    name: 'Standard'
+    capacity: embeddingModelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: embeddingModelName
+      version: embeddingModelVersion
+    }
+  }
+}
+
 // ─── Phi serverless model deployment (experiment; disabled by default) ───
 // Phi models deploy with format 'Microsoft'. Verify availability in the target
 // region before enabling via deployPhiModel=true.
@@ -132,6 +169,7 @@ resource phiModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@20
   dependsOn: [
     modelDeployment
     summaryModelDeployment
+    embeddingModelDeployment
   ]
   sku: {
     name: 'GlobalStandard'
@@ -167,6 +205,7 @@ resource openaiPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-11-01' =
   dependsOn: [
     modelDeployment
     summaryModelDeployment
+    embeddingModelDeployment
     phiModelDeployment
     foundryProject
   ]
@@ -206,3 +245,4 @@ output aiServicesName string = aiServices.name
 output foundryProjectName string = foundryProject.name
 output foundryProjectEndpoint string = 'https://${aiServices.name}.services.ai.azure.com/api/projects/${foundryProject.name}'
 output summaryModelDeploymentName string = deploySummaryModel ? summaryModelDeploymentName : ''
+output embeddingModelDeploymentName string = deployEmbeddingModel ? embeddingModelDeploymentName : ''
