@@ -53,6 +53,12 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-0
 resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
   parent: aiServices
   name: azureOpenaiModelDeploymentName
+  // Serialize after the project: both are account children that mutate the
+  // account, and creating them in parallel causes an ETag/If-Match race
+  // (IfMatchPreconditionFailed) on the account.
+  dependsOn: [
+    foundryProject
+  ]
   sku: {
     name: 'GlobalStandard'
     capacity: 800
