@@ -1179,9 +1179,9 @@ def _get_document_status(item: dict) -> str:
     state = item.get("state", {})
     if state.get("error") or item.get("errors"):
         return "failed"
-    if state.get("finished") or state.get("gpt_summary") or state.get("gpt_evaluation"):
+    if state.get("processing_completed") or state.get("gpt_summary_completed") or state.get("gpt_evaluation_completed"):
         return "completed"
-    if state.get("file_landed") or state.get("ocr_completed") or state.get("gpt_extraction"):
+    if state.get("ocr_completed") or state.get("gpt_extraction_completed"):
         return "processing"
     return "pending"
 
