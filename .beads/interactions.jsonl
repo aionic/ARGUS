@@ -8,3 +8,7 @@
 {"id":"int-e8fb837c","kind":"field_change","created_at":"2026-06-24T05:34:10.6344648Z","actor":"aionic","issue_id":"argus-7l2.4","extra":{"field":"status","new_value":"closed","old_value":"open"}}
 {"id":"int-a63408ac","kind":"field_change","created_at":"2026-06-24T05:34:11.6649976Z","actor":"aionic","issue_id":"argus-7l2.6","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
 {"id":"int-331332a9","kind":"field_change","created_at":"2026-06-24T05:43:00.0743216Z","actor":"aionic","issue_id":"argus-7l2.5","extra":{"field":"status","new_value":"closed","old_value":"open"}}
+{"id":"int-024f9e60","kind":"field_change","created_at":"2026-06-24T05:59:55.1284852Z","actor":"aionic","issue_id":"argus-7l2.6","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}
+{"id":"int-75b5b986","kind":"field_change","created_at":"2026-06-24T05:59:56.6391178Z","actor":"aionic","issue_id":"argus-7l2.7","extra":{"field":"status","new_value":"closed","old_value":"open"}}
+{"id":"int-827f838f","kind":"field_change","created_at":"2026-06-24T05:59:57.9926101Z","actor":"aionic","issue_id":"argus-7l2","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}
+{"id":"int-ff9bf643","kind":"field_change","created_at":"2026-06-24T06:00:12.5545397Z","actor":"aionic","issue_id":"argus-7l2.2","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}
