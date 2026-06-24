@@ -1,0 +1,52 @@
+You are extracting structured data from a CMS-1500 (HCFA-1500) health insurance
+claim form. Output one value per field key in the provided schema. The field keys
+follow the CMS-1500 box layout, encoded as od_<field>_<n>.
+
+GENERAL RULES
+- Transcribe values EXACTLY as they appear on the form (same characters, casing,
+  spacing, and punctuation). Do not normalize, reformat, correct, or infer values.
+- If a box is blank or not present on the form, return an empty string "".
+- For checkbox fields (keys like od_pat_sex_m_1, od_pat_sex_f_1, od_rel_to_job_y_1,
+  od_rel_to_job_n_1, od_accept_asg_y_1, od_lab_yes_1, od_lab_no_1, etc.), return
+  "X" if the box is marked and "" if it is not. Only one box in a yes/no or sex
+  pair is normally marked.
+- Names are typically "LAST, FIRST" or "LAST, FIRST M" — transcribe as written.
+- Dates appear in mixed formats (e.g. "11052021", "11 05 21", "11/18/21",
+  "12171940"); copy them exactly as printed, do not convert.
+- Monetary amounts are often printed without a decimal point (e.g. "26000" meaning
+  $260.00) or with one (e.g. "585.81"); copy exactly as printed.
+
+FIELD GROUPS (box -> key prefix)
+- Box 1 insurance type checkboxes: od_medicare_1, od_medicaid_1, od_champus_1,
+  od_champusva_1, od_ghp_1, od_feca_1, od_other_1.
+- Box 1a insured ID: od_id_number_1.
+- Box 2 patient name: od_pat_name_1; Box 3 DOB/sex: od_pat_dob_1,
+  od_pat_sex_m_1, od_pat_sex_f_1; Box 4 insured name: od_ins_name_1.
+- Box 5 patient address: od_pat_addr_1, od_pat_city_1, od_pat_state_1,
+  od_pat_zip_1, od_pat_phone_1; relationship: od_pat_rel_* .
+- Box 7 insured address: od_ins_addr_1, od_ins_city_1, od_ins_state_1,
+  od_ins_zip_1, od_ins_phone_1.
+- Boxes 9-9d other insured: od_oth_ins_*; Boxes 10a-c condition: od_rel_to_job_*,
+  od_rel_to_acc_*, od_acc_state_1, od_rel_to_oth_*.
+- Boxes 11-11d insured plan: od_ins_grp_1, od_ins_dob_1, od_ins_sex_*,
+  od_ins_plan_1, od_other_plan_*.
+- Boxes 12-13 signatures: od_pat_auth_1, od_pat_auth_dat_1, od_ins_auth_1
+  (often "SIGNATURE ON FILE").
+- Boxes 14-23 dates/refs: od_injury_date_1, od_refer_name_1, od_hosp_date_*,
+  od_lab_*, od_med_resub_1, od_orig_ref_1, od_prior_auth_1, od_icd_ind_1.
+- Box 21 diagnosis codes A-L: od_diag_a_1 .. od_diag_l_1.
+- Box 24 service lines (up to 6 rows, suffix _1.._6): od_from_date_*, od_to_date_*,
+  od_place_ser_*, od_code_* (CPT/HCPCS), od_mod_* (modifiers), od_dcode_*
+  (diagnosis pointer), od_charges_*, od_days_*, od_epsdt_*, od_emg_*,
+  od_24j_npi_* (rendering NPI).
+- Box 25 tax ID: od_fed_id_1 with od_ssn_1 / od_ein_1 checkbox; Box 26 account:
+  od_pat_acct_no_1; Box 27 accept assignment: od_accept_asg_*.
+- Box 28-30 totals: od_total_chg_1, od_amount_paid_1, od_balance_1.
+- Box 31 signature of provider: od_attend_1, od_attend_2 (name/date).
+- Box 32 service facility: od_render_1, od_render_2, od_render_3 (name/address
+  lines) and od_render_bottom_left_1 / od_render_bottom_right_1 (NPI/other ID).
+- Box 33 billing provider: od_prov_1..od_prov_5 (name/address lines) and
+  od_prov_bottom_left_1 / od_prov_bottom_right_1 (NPI/other ID).
+
+Return all schema keys. Use "" for any box you cannot read or that is blank.
+Use OCR text as the primary source and cross-reference the image for accuracy.

@@ -1,0 +1,16 @@
+[
+  {
+    "file": "resources/Samples/20211210NE1000031_nfnb.00000.tif",
+    "document_type": "structured_claim",
+    "deid_status": "sanitized",
+    "truth_dataset": "BW Truth.csv",
+    "truth_image_name": "20211210NE1000031_NFNB.00000.TIF"
+  },
+  {
+    "file": "resources/Samples/20211210NE1000001_dfnc.tif",
+    "document_type": "structured_claim",
+    "deid_status": "sanitized",
+    "truth_dataset": "Red Truth.csv",
+    "truth_image_name": "20211210NE1000001_DFNC.TIF"
+  }
+]

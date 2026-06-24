@@ -130,6 +130,39 @@ def _set_flag(document: dict, reasons: list[str], stage: str) -> None:
     }
 
 
+def _cu_min_confidence() -> float:
+    """Minimum acceptable Content Understanding field confidence (env override)."""
+    try:
+        return float(os.getenv("CU_MIN_CONFIDENCE", "0.5"))
+    except (TypeError, ValueError):
+        return 0.5
+
+
+def _iter_confidences(obj: object):
+    """Yield all numeric confidence values from a (possibly nested) CU map."""
+    if isinstance(obj, dict):
+        for value in obj.values():
+            yield from _iter_confidences(value)
+    elif isinstance(obj, (int, float)) and not isinstance(obj, bool):
+        yield float(obj)
+
+
+def _cu_low_confidence_reasons(cu_confidence: dict, min_confidence: float) -> list[str]:
+    """Primary low-quality signal for the CU backend.
+
+    Content Understanding returns a per-field confidence map but no separate
+    OCR-confidence stage. When at least half of the extracted fields fall below
+    ``min_confidence``, flag the document for human review.
+    """
+    values = [v for v in _iter_confidences(cu_confidence) if 0.0 <= v <= 1.0]
+    if not values:
+        return []
+    low = sum(1 for v in values if v < min_confidence)
+    if low / len(values) >= 0.5:
+        return [f"low_extraction_confidence ({low}/{len(values)} fields < {min_confidence})"]
+    return []
+
+
 def create_blob_input_stream(blob_url: str) -> BlobInputStream:
     """Create a BlobInputStream from a blob URL"""
     try:
@@ -459,6 +492,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             total_ocr_time = 0
             total_extraction_time = 0
             cu_confidence = {}
+            cu_usable_images = False
             example_schema = document["model_input"]["example_schema"]
             dataset_name = document.get("dataset", "default")
             try:
@@ -486,14 +520,15 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 total_ocr_time += cu_time
                 total_extraction_time += cu_time
 
-                # Prepare images only when needed downstream (evaluation uses vision).
-                if enable_evaluation and eff.enable_images:
-                    temp_dir, imgs, reports = prepare_images(file_path, Config(), quality_options)
-                    temp_dirs.append(temp_dir)
-                    image_cache[i] = imgs
-                    image_quality_reports.extend(reports)
-                else:
-                    image_cache[i] = []
+                # Always prepare page images so the quality preflight can run on
+                # the CU path; keep the base64 images only when evaluation (vision)
+                # will actually consume them, otherwise discard to save memory.
+                temp_dir, imgs, reports = prepare_images(file_path, Config(), quality_options)
+                temp_dirs.append(temp_dir)
+                image_quality_reports.extend(reports)
+                if imgs:
+                    cu_usable_images = True
+                image_cache[i] = imgs if (enable_evaluation and eff.enable_images) else []
 
             processing_times["ocr_processing_time"] = total_ocr_time
             processing_times["gpt_extraction_time"] = total_extraction_time
@@ -501,6 +536,28 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             document["properties"]["extraction_backend_used"] = "content_understanding"
             if cu_confidence:
                 document["properties"]["content_understanding_confidence"] = cu_confidence
+
+            # Backend-agnostic preflight for Content Understanding: the GPT branch
+            # flags BEFORE extraction, but CU extracts in one call, so here we
+            # post-flag for human review (tier switch cannot re-run CU cheaply).
+            combined_cu_text = "\n".join(str(r) for r in ocr_results).strip()
+            document["properties"]["num_pages"] = num_pages or len(file_paths) or 1
+            document["properties"]["ocr_text_length"] = len(combined_cu_text)
+            if image_quality_reports:
+                document["properties"]["image_quality"] = image_quality_reports
+                if any(r.get("flagged_low_quality") for r in image_quality_reports):
+                    document["properties"]["image_quality_warning"] = True
+                    _set_flag(document, _quality_flag_reasons(image_quality_reports), "quality")
+            if len(combined_cu_text) < 20 and not cu_usable_images:
+                _set_flag(
+                    document,
+                    ["ocr_text_unreadable_or_empty_and_no_usable_images"],
+                    "preflight",
+                )
+            cu_conf_reasons = _cu_low_confidence_reasons(cu_confidence, _cu_min_confidence())
+            if cu_conf_reasons:
+                _set_flag(document, cu_conf_reasons, "quality")
+
             update_state(document, data_container, "ocr_completed", True, total_ocr_time)
             data_container.upsert_item(document)
         else:

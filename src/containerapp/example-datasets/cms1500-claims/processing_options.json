@@ -1,0 +1,21 @@
+{
+  "extraction_backend": "content_understanding",
+  "tier": "standard",
+  "include_ocr": true,
+  "include_images": true,
+  "enable_summary": false,
+  "enable_evaluation": false,
+  "enable_preprocessing": true,
+  "enable_enhancement": true,
+  "skip_if_still_bad": false,
+  "quality_thresholds": {
+    "blur_min": 60.0,
+    "brightness_min": 40.0,
+    "brightness_max": 250.0,
+    "contrast_min": 12.0,
+    "blank_std_max": 6.0,
+    "min_width": 900,
+    "min_height": 900,
+    "skew_flag_deg": 3.0
+  }
+}

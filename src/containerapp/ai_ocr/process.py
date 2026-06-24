@@ -344,10 +344,25 @@ def fetch_model_prompt_and_schema(dataset_type, force_refresh=False):
                 else:
                     logging.warning(f"No output_schema.json found in {folder_path}, using empty schema")
 
+                # Optional processing_options.json bakes per-dataset pipeline
+                # settings (extraction_backend, tier, quality_thresholds, etc.)
+                # into the seeded configuration so they are reproducible.
+                options_file_path = os.path.join(folder_path, "processing_options.json")
+                dataset_processing_options = None
+                if os.path.exists(options_file_path):
+                    try:
+                        with open(options_file_path, "r") as options_file:
+                            dataset_processing_options = json.load(options_file)
+                        logging.info(f"Loaded processing_options from {options_file_path}")
+                    except (ValueError, OSError) as exc:
+                        logging.warning(f"Failed to load processing_options.json in {folder_path}: {exc}")
+
                 # Add item config to config_item
                 item_config["model_prompt"] = model_prompt
                 item_config["example_schema"] = example_schema
                 item_config["max_pages_per_chunk"] = 10  # Default value for backward compatibility
+                if dataset_processing_options is not None:
+                    item_config["processing_options"] = dataset_processing_options
                 config_item["datasets"][folder_name] = item_config
 
         try:
@@ -426,6 +441,21 @@ def create_temp_dir():
     return temp_dir
 
 
+def _render_dpi_matrix() -> "fitz.Matrix":
+    """Zoom matrix for page rendering, controlled by env ``IMAGE_RENDER_DPI``.
+
+    PyMuPDF's default pixmap renders at 72 DPI, which produces small images that
+    trip the min-resolution quality gate and degrade OCR/vision on document
+    scans. Default to 200 DPI for legible page images.
+    """
+    try:
+        dpi = float(os.getenv("IMAGE_RENDER_DPI", "200"))
+    except (TypeError, ValueError):
+        dpi = 200.0
+    zoom = max(dpi, 72.0) / 72.0
+    return fitz.Matrix(zoom, zoom)
+
+
 def convert_pdf_into_image(pdf_path):
     # Create a temporary directory with random UUID
     temp_dir = create_temp_dir()
@@ -436,11 +466,12 @@ def convert_pdf_into_image(pdf_path):
         pdf_document = fitz.open(pdf_path)
 
         # Iterate through all the pages
+        render_matrix = _render_dpi_matrix()
         for page_num in range(len(pdf_document)):
             page = pdf_document.load_page(page_num)
 
-            # Convert the page to an image
-            pix = page.get_pixmap()
+            # Convert the page to an image at the configured render DPI
+            pix = page.get_pixmap(matrix=render_matrix)
 
             # Convert the pixmap to bytes
             image_bytes = pix.tobytes("png")
