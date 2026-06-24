@@ -270,6 +270,7 @@ def run_api(base_url: str, api_key: str, tier_label: str, limit: int | None, pol
 
     doc_scores: dict[str, dict[str, Any]] = {}
     flags: dict[str, dict | None] = {}
+    costs: list[float] = []
     for path in samples:
         with path.open("rb") as handle:
             resp = requests.post(
@@ -287,10 +288,17 @@ def run_api(base_url: str, api_key: str, tier_label: str, limit: int | None, pol
             continue
         properties = document.get("properties") or {}
         flags[path.name] = properties.get("flag")
+        cost = (properties.get("cost") or {}).get("usd_per_page")
+        if isinstance(cost, (int, float)):
+            costs.append(float(cost))
         extracted = flatten_extraction((document.get("extracted_data") or {}).get("gpt_extraction_output"))
         truth_row = truth.get(image_key(path.name))
-        if truth_row:
-            doc_scores[path.name] = score_document(truth_row, extracted)
+        scored = score_document(truth_row, extracted) if truth_row else None
+        if scored:
+            doc_scores[path.name] = scored
+        acc = scored["nonempty_accuracy"] if scored else None
+        flagged = bool(flags[path.name] and flags[path.name].get("flagged"))
+        print(f"  {path.name}: flagged={flagged} accuracy={acc} usd/page={cost}")
 
     return {
         "dataset": DATASET,
@@ -298,6 +306,7 @@ def run_api(base_url: str, api_key: str, tier_label: str, limit: int | None, pol
             tier_label: {
                 "extraction": aggregate(doc_scores) if doc_scores else {"documents_scored": 0},
                 "preflight": preflight_report(flags),
+                "avg_usd_per_page": (sum(costs) / len(costs)) if costs else None,
             }
         },
     }
@@ -310,8 +319,12 @@ def _poll_document(requests_mod, base_url: str, headers: dict, document_id: str,
         if resp.status_code == 200:
             document = resp.json()
             state = document.get("state") or {}
-            extracted = (document.get("extracted_data") or {}).get("gpt_extraction_output")
-            if state.get("ocr_completed") or extracted:
+            # Wait for the terminal state so extraction (and the ocr_confidence
+            # preflight) are fully populated. ocr_completed fires too early on the
+            # GPT path (before extraction), which previously yielded empty results.
+            if state.get("processing_completed") is not None:
+                return document
+            if document.get("errors"):
                 return document
         time.sleep(5)
     return None

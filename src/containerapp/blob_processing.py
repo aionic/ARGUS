@@ -26,6 +26,7 @@ from models import BlobInputStream
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "functionapp"))
 from ai_ocr.azure.content_understanding import get_cu_extraction
+from ai_ocr.azure.doc_intelligence import get_read_confidence
 from ai_ocr.cost import CostTracker, di_page_price
 from ai_ocr.model import Config
 from ai_ocr.process import (
@@ -122,45 +123,77 @@ def _quality_flag_reasons(image_quality_reports: list[dict]) -> list[str]:
 def _set_flag(document: dict, reasons: list[str], stage: str) -> None:
     if not reasons:
         return
+    existing = document["properties"].get("flag") or {}
+    merged_reasons = list(existing.get("reasons") or [])
+    for reason in reasons:
+        if reason not in merged_reasons:
+            merged_reasons.append(reason)
     document["properties"]["flag"] = {
         "flagged": True,
-        "reasons": reasons,
-        "stage": stage,
-        "flagged_at": datetime.now().isoformat(),
+        "reasons": merged_reasons,
+        "stage": existing.get("stage", stage),
+        "flagged_at": existing.get("flagged_at", datetime.now().isoformat()),
     }
 
 
-def _cu_min_confidence() -> float:
-    """Minimum acceptable Content Understanding field confidence (env override)."""
-    try:
-        return float(os.getenv("CU_MIN_CONFIDENCE", "0.5"))
-    except (TypeError, ValueError):
-        return 0.5
+def _ocr_confidence_thresholds() -> tuple[float, float, float]:
+    """(word_min, mean_min, low_frac_max) for the OCR word-confidence gate (env-tunable)."""
+
+    def _f(name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, str(default)))
+        except (TypeError, ValueError):
+            return default
+
+    return (
+        _f("OCR_CONFIDENCE_WORD_MIN", 0.70),
+        _f("OCR_CONFIDENCE_MEAN_MIN", 0.80),
+        _f("OCR_CONFIDENCE_LOW_FRAC_MAX", 0.25),
+    )
 
 
-def _iter_confidences(obj: object):
-    """Yield all numeric confidence values from a (possibly nested) CU map."""
-    if isinstance(obj, dict):
-        for value in obj.values():
-            yield from _iter_confidences(value)
-    elif isinstance(obj, (int, float)) and not isinstance(obj, bool):
-        yield float(obj)
-
-
-def _cu_low_confidence_reasons(cu_confidence: dict, min_confidence: float) -> list[str]:
-    """Primary low-quality signal for the CU backend.
-
-    Content Understanding returns a per-field confidence map but no separate
-    OCR-confidence stage. When at least half of the extracted fields fall below
-    ``min_confidence``, flag the document for human review.
-    """
-    values = [v for v in _iter_confidences(cu_confidence) if 0.0 <= v <= 1.0]
-    if not values:
+def _aggregate_ocr_confidence(per_chunk: list[dict], document: dict) -> list[str]:
+    """Aggregate per-chunk word-confidence stats, store them, and return flag reasons."""
+    if not per_chunk:
         return []
-    low = sum(1 for v in values if v < min_confidence)
-    if low / len(values) >= 0.5:
-        return [f"low_extraction_confidence ({low}/{len(values)} fields < {min_confidence})"]
-    return []
+    word_min, mean_min, low_frac_max = _ocr_confidence_thresholds()
+    total_words = sum(s.get("n_words", 0) for s in per_chunk) or 1
+    agg = {
+        "n_words": total_words,
+        # token-weighted mean across chunks
+        "mean": round(sum(s["mean"] * s["n_words"] for s in per_chunk) / total_words, 4),
+        "frac_low": round(sum(s["frac_low"] * s["n_words"] for s in per_chunk) / total_words, 4),
+        "min": round(min(s["min"] for s in per_chunk), 4),
+        "word_min": word_min,
+        "per_chunk": per_chunk,
+    }
+    document["properties"]["ocr_confidence"] = agg
+    reasons: list[str] = []
+    if agg["mean"] < mean_min:
+        reasons.append(f"low_ocr_confidence (mean {agg['mean']:.2f} < {mean_min:.2f})")
+    if agg["frac_low"] > low_frac_max:
+        reasons.append(f"high_low_confidence_word_fraction ({agg['frac_low']:.0%} of words < {word_min:.2f})")
+    return reasons
+
+
+def _ocr_confidence_preflight(file_paths: list[str], document: dict) -> list[str]:
+    """Backend-agnostic legibility gate using Document Intelligence word confidence.
+
+    Runs a lightweight ``prebuilt-read`` pass over each chunk, aggregates per-word
+    recognition confidence, stores it on ``properties.ocr_confidence``, and returns
+    flag reasons when the document reads as low-confidence (faint/garbled scan).
+    This is the only signal that reliably separates genuinely illegible scans from
+    legitimate sparse/structured forms (pixel- and text-statistics signals do not).
+    """
+    if os.getenv("ENABLE_OCR_CONFIDENCE_PREFLIGHT", "true").lower() in ("0", "false", "no"):
+        return []
+    word_min, _, _ = _ocr_confidence_thresholds()
+    per_chunk: list[dict] = []
+    for file_path in file_paths:
+        stats = get_read_confidence(file_path, None, word_min=word_min)
+        if stats:
+            per_chunk.append(stats)
+    return _aggregate_ocr_confidence(per_chunk, document)
 
 
 def create_blob_input_stream(blob_url: str) -> BlobInputStream:
@@ -554,9 +587,11 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                     ["ocr_text_unreadable_or_empty_and_no_usable_images"],
                     "preflight",
                 )
-            cu_conf_reasons = _cu_low_confidence_reasons(cu_confidence, _cu_min_confidence())
-            if cu_conf_reasons:
-                _set_flag(document, cu_conf_reasons, "quality")
+            # Primary legibility gate: DI word confidence (CU exposes no word-level
+            # confidence and its field confidence is inverted for sparse forms).
+            ocr_conf_reasons = _ocr_confidence_preflight(file_paths, document)
+            if ocr_conf_reasons:
+                _set_flag(document, ocr_conf_reasons, "quality")
 
             update_state(document, data_container, "ocr_completed", True, total_ocr_time)
             data_container.upsert_item(document)
@@ -626,6 +661,17 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                     ["ocr_text_unreadable_or_empty_and_no_usable_images"],
                     "preflight",
                 )
+
+            # Primary legibility gate: DI word confidence. Reuse the per-chunk stats
+            # captured during the azure-layout OCR call (no extra DI request); fall
+            # back to a dedicated read pass if none were captured (e.g., OCR skipped).
+            captured_conf = document["properties"].pop("_ocr_conf_chunks", [])
+            if captured_conf:
+                ocr_conf_reasons = _aggregate_ocr_confidence(captured_conf, document)
+            else:
+                ocr_conf_reasons = _ocr_confidence_preflight(file_paths, document)
+            if ocr_conf_reasons:
+                _set_flag(document, ocr_conf_reasons, "quality")
 
             example_schema = document["model_input"]["example_schema"]
             schema_obj = _schema_to_dict(example_schema)

@@ -14,7 +14,7 @@ from azure.identity import DefaultAzureCredential
 from PIL import Image
 from PyPDF2 import PdfReader, PdfWriter
 
-from ai_ocr.azure.doc_intelligence import get_ocr_results as get_azure_ocr_results
+from ai_ocr.azure.doc_intelligence import get_ocr_results_with_confidence as get_azure_ocr_with_confidence
 from ai_ocr.azure.mistral_doc_intelligence import get_ocr_results as get_mistral_ocr_results
 from ai_ocr.azure.openai_ops import get_size_of_base64_images, load_image
 from ai_ocr.chains import get_structured_data, get_summary_with_gpt, perform_gpt_evaluation_and_enrichment
@@ -521,7 +521,11 @@ def run_ocr_processing(
         if ocr_provider == "mistral":
             ocr_result = get_mistral_ocr_results(file_to_ocr, None)
         elif ocr_provider == "azure":
-            ocr_result = get_azure_ocr_results(file_to_ocr, None)
+            # Capture per-word confidence from the same layout call (no extra cost)
+            # so the preflight legibility gate can run without a second DI request.
+            ocr_result, conf_stats = get_azure_ocr_with_confidence(file_to_ocr, None)
+            if conf_stats is not None:
+                document["properties"].setdefault("_ocr_conf_chunks", []).append(conf_stats)
         else:
             raise ValueError(f"Unknown OCR provider: {ocr_provider}. Supported providers: 'azure', 'mistral'")
 
