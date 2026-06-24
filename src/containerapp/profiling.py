@@ -159,10 +159,13 @@ def _candidate_demo_roots(demo_root: str | Path | None) -> list[Path]:
     """
     if demo_root:
         return [Path(demo_root)]
-    roots = [_repo_root() / "demo"]
+    roots: list[Path] = []
     env_root = os.environ.get("PROFILING_DEMO_ROOT")
     if env_root:
-        roots.insert(0, Path(env_root))
+        roots.append(Path(env_root))
+    repo_root = _repo_root()
+    if repo_root is not None:
+        roots.append(repo_root / "demo")
     roots.append(Path(__file__).resolve().parent / "bundled_samples")
     return roots
 
@@ -378,8 +381,17 @@ def _read_document(data_container: Any, document_id: str) -> dict[str, Any] | No
             return None
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+def _repo_root() -> Path | None:
+    """Best-effort repo root.
+
+    Returns ``None`` when this module is not running from a checked-out repo
+    (e.g. inside the deployed container image at ``/app``), where there are not
+    enough path parents to resolve a repo root.
+    """
+    resolved = Path(__file__).resolve()
+    if len(resolved.parents) < 3:
+        return None
+    return resolved.parents[2]
 
 
 def _batch_id(dataset: str, tiers: Sequence[str], sources: Sequence[ProfilingSource], generated_at: str) -> str:
