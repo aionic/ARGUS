@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import threading
 from collections import Counter
 from collections.abc import Iterable, Sequence
@@ -148,18 +149,40 @@ def normalize_tiers(tiers: Sequence[str] | str | None) -> list[str]:
     return normalized or list(DEFAULT_TIERS)
 
 
+def _candidate_demo_roots(demo_root: str | Path | None) -> list[Path]:
+    """Demo roots in priority order.
+
+    Supports running from the repo (``<repo>/demo``) and from the deployed
+    container image, where only a curated sample set is bundled next to this
+    module (``<module_dir>/bundled_samples``). An explicit ``PROFILING_DEMO_ROOT``
+    env var overrides both.
+    """
+    if demo_root:
+        return [Path(demo_root)]
+    roots = [_repo_root() / "demo"]
+    env_root = os.environ.get("PROFILING_DEMO_ROOT")
+    if env_root:
+        roots.insert(0, Path(env_root))
+    roots.append(Path(__file__).resolve().parent / "bundled_samples")
+    return roots
+
+
 def resolve_profile_sources(
     dataset: str,
     files: Sequence[str] | None = None,
     demo_root: str | Path | None = None,
 ) -> list[ProfilingSource]:
-    root = Path(demo_root) if demo_root else _repo_root() / "demo"
-    dataset_dir = root / dataset
+    candidate_roots = _candidate_demo_roots(demo_root)
+    dataset_dir = next(
+        (root / dataset for root in candidate_roots if (root / dataset).exists()),
+        candidate_roots[0] / dataset,
+    )
     if files:
         return [_resolve_source(dataset_dir, file_spec) for file_spec in files]
 
     if not dataset_dir.exists():
-        raise FileNotFoundError(f"Demo dataset directory not found: {dataset_dir}")
+        searched = ", ".join(str(root / dataset) for root in candidate_roots)
+        raise FileNotFoundError(f"Demo dataset directory not found for '{dataset}'. Searched: {searched}")
 
     sources = [
         ProfilingSource(label=path.name, file_name=path.name, path=path)

@@ -67,6 +67,9 @@ COPY ai_ocr ./ai_ocr
 # Copy example datasets for schema and prompt loading
 COPY example-datasets ./example-datasets
 
+# Copy curated sample documents used by the cost-profiling endpoint
+COPY bundled_samples ./bundled_samples
+
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app
 USER appuser
