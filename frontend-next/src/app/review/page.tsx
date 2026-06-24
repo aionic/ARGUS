@@ -113,6 +113,7 @@ function FlagEmailComposer({ document, open, onOpenChange, onMockSent }: Compose
       )
       setSubject(draft.subject)
       setBody(draft.body)
+      if (draft.to) setTo(draft.to)
       toast.success("Draft generated")
     } catch (error) {
       const message = getErrorMessage(error, "Failed to generate draft")

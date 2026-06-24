@@ -88,6 +88,8 @@ export interface ProfilingReport {
 export interface GenerateFlagEmailResponse {
   subject: string
   body: string
+  to?: string
+  from?: string
 }
 
 export interface SendFlagEmailMockPayload {

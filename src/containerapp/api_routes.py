@@ -1576,7 +1576,12 @@ async def generate_flag_email(document_id: str, request: Request):
             max_tokens=900,
         )
 
-        return _parse_email_draft(result.text, document)
+        draft = _parse_email_draft(result.text, document)
+        draft["to"] = (
+            _get_uploader_email(document) or flag_email_config.get("to_fallback") or DEFAULT_FLAG_EMAIL_TO_FALLBACK
+        )
+        draft["from"] = flag_email_config.get("from") or DEFAULT_FLAG_EMAIL_FROM
+        return draft
 
     except HTTPException:
         raise
