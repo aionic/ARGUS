@@ -13,3 +13,9 @@ services:
     project: frontend-next
     language: js
     host: containerapp
+  paddleocr:
+    project: src/paddleocr-service
+    language: docker
+    host: containerapp
+    docker:
+      path: Dockerfile

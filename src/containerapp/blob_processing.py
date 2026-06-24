@@ -29,6 +29,12 @@ from ai_ocr.azure.content_understanding import get_cu_extraction
 from ai_ocr.azure.doc_intelligence import get_read_confidence
 from ai_ocr.cost import CostTracker, di_page_price
 from ai_ocr.model import Config
+from ai_ocr.paddle_gate import (
+    assess_paddle_confidence,
+    paddle_pregate_enabled,
+    paddle_pregate_mode,
+    paddle_verdict,
+)
 from ai_ocr.process import (
     fetch_model_prompt_and_schema,
     initialize_document,
@@ -107,6 +113,21 @@ def _cu_page_price() -> float:
             logger.warning("Invalid CONTENT_UNDERSTANDING_PAGE_PRICE_USD=%s; using fallback", raw_value)
     # Fallback until Azure Retail exposes a reliable Content Understanding page meter.
     return CONTENT_UNDERSTANDING_FALLBACK_USD_PER_PAGE
+
+
+def _quality_flagging_enabled() -> bool:
+    """Whether OpenCV image-quality metrics should *route/flag* documents.
+
+    Default OFF. Our experiments showed the cv2 pixel metrics are an unreliable
+    legibility gate — they missed the genuinely-bad scan (bad.png) yet false-flagged
+    ~89% of legitimate sparse B&W claim forms before per-dataset tuning. The PaddleOCR
+    pre-gate and the Document Intelligence word-confidence backstop now own the block
+    decision (recognition confidence, not pixel statistics). cv2 metrics are still
+    computed and stored as advisory hints (``image_quality`` / ``image_quality_warning``,
+    useful for the rescan-email screen) but no longer set a hard quality flag unless
+    explicitly re-enabled via ``ENABLE_QUALITY_FLAGGING``.
+    """
+    return os.getenv("ENABLE_QUALITY_FLAGGING", "false").lower() not in ("0", "false", "no", "")
 
 
 def _quality_flag_reasons(image_quality_reports: list[dict]) -> list[str]:
@@ -194,6 +215,34 @@ def _ocr_confidence_preflight(file_paths: list[str], document: dict) -> list[str
         if stats:
             per_chunk.append(stats)
     return _aggregate_ocr_confidence(per_chunk, document)
+
+
+def _paddle_pregate(file_paths: list[str], document: dict, processing_options: dict) -> list[str]:
+    """Cheap PaddleOCR legibility pre-gate, run BEFORE the paid DI/CU extraction call.
+
+    Renders page images, probes the internal PaddleOCR service for aggregate per-line
+    recognition confidence, stores the stats on ``properties.paddle_pregate``, and
+    returns flag reasons when the scan reads as too low-quality to extract. Returns
+    ``[]`` when disabled, unreachable, or the scan passes — so the pipeline proceeds to
+    the normal backend (where the DI word-confidence gate still runs as the backstop).
+    """
+    if not paddle_pregate_enabled(processing_options):
+        return []
+    stats = assess_paddle_confidence(file_paths)
+    if stats is None:
+        logger.info("PaddleOCR pre-gate skipped (service unreachable or no page assessed)")
+        return []
+    document["properties"]["paddle_pregate"] = stats
+    reasons = paddle_verdict(stats)
+    logger.info(
+        "PaddleOCR pre-gate: pages=%s lines=%s mean=%s frac_low=%s -> %s",
+        stats.get("n_pages"),
+        stats.get("n_lines"),
+        stats.get("mean"),
+        stats.get("frac_low"),
+        "BAD" if reasons else "OK",
+    )
+    return reasons
 
 
 def create_blob_input_stream(blob_url: str) -> BlobInputStream:
@@ -518,6 +567,46 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
         image_cache = {}
         image_quality_reports = []
 
+        # ── PaddleOCR pre-gate (cheap legibility probe BEFORE paid DI/CU) ──────
+        # Opt-in. On a bad verdict in `block` mode we short-circuit: skip the paid
+        # extraction call entirely, flag the document, record the avoided cost, mark
+        # it complete, and route to review. In `advisory` mode we only flag and
+        # proceed. The DI word-confidence gate still runs as the backstop downstream.
+        paddle_reasons = _paddle_pregate(file_paths, document, processing_options)
+        if paddle_reasons and paddle_pregate_mode() == "block":
+            logger.info(
+                "PaddleOCR pre-gate BLOCKED %s; skipping %s extraction", blob_input_stream.name, extraction_backend
+            )
+            _set_flag(document, paddle_reasons, "paddle_pregate")
+            document["properties"]["num_pages"] = num_pages or len(file_paths) or 1
+            document["properties"]["extraction_backend_used"] = "skipped_paddle_pregate"
+            document["extracted_data"]["ocr_output"] = ""
+            document["extracted_data"]["gpt_extraction_output"] = {}
+            document["extracted_data"]["gpt_extraction_output_with_evaluation"] = {}
+            document["extracted_data"]["classification"] = ""
+            document["extracted_data"]["gpt_summary_output"] = ""
+
+            # Cost telemetry: the paid extraction call was avoided (record it at $0 so
+            # the savings are visible); Paddle compute is scale-to-zero ~free.
+            if extraction_backend == "content_understanding":
+                record_page_cost("content_understanding", _cu_cost_model(), 0, 0)
+            else:
+                record_page_cost("ocr", _ocr_cost_model(), 0, 0)
+                record_token_cost("extraction", eff.extraction_model, None)
+            record_token_cost("evaluation", eff.extraction_model, None)
+            record_token_cost("summary", eff.summary_model, None)
+            record_page_cost("paddle_pregate", "paddleocr", document["properties"]["num_pages"], 0)
+            document["properties"]["cost"] = tracker.aggregate(document["properties"]["num_pages"])
+            document["properties"]["tier"] = eff.tier
+
+            update_state(document, data_container, "paddle_pregate_blocked", True, 0)
+            document["state"]["processing_completed"] = True
+            update_state(document, data_container, "processing_completed", True)
+            data_container.upsert_item(document)
+            return document
+        if paddle_reasons:
+            _set_flag(document, paddle_reasons, "paddle_pregate")
+
         if extraction_backend == "content_understanding":
             # Content Understanding full-analyzer: OCR + field extraction in one call.
             logger.info(f"Using Content Understanding extraction backend for {len(file_paths)} chunks")
@@ -580,7 +669,8 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 document["properties"]["image_quality"] = image_quality_reports
                 if any(r.get("flagged_low_quality") for r in image_quality_reports):
                     document["properties"]["image_quality_warning"] = True
-                    _set_flag(document, _quality_flag_reasons(image_quality_reports), "quality")
+                    if _quality_flagging_enabled():
+                        _set_flag(document, _quality_flag_reasons(image_quality_reports), "quality")
             if len(combined_cu_text) < 20 and not cu_usable_images:
                 _set_flag(
                     document,
@@ -647,9 +737,11 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 document["properties"]["image_quality"] = image_quality_reports
                 if any(r.get("flagged_low_quality") for r in image_quality_reports):
                     document["properties"]["image_quality_warning"] = True
-                    _set_flag(document, _quality_flag_reasons(image_quality_reports), "quality")
+                    if _quality_flagging_enabled():
+                        _set_flag(document, _quality_flag_reasons(image_quality_reports), "quality")
             elif document["properties"].get("image_quality_warning"):
-                _set_flag(document, ["image_quality_warning"], "quality")
+                if _quality_flagging_enabled():
+                    _set_flag(document, ["image_quality_warning"], "quality")
 
             combined_ocr_text = "\n".join(str(result) for result in ocr_results)
             document["properties"]["num_pages"] = num_pages or len(file_paths) or 1

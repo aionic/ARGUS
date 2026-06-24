@@ -26,6 +26,9 @@ param extractionBackend string = 'gpt'
 @description('Enable OpenCV image quality preprocessing/enhancement by default')
 param enableImagePreprocessing bool = false
 
+@description('Enable the PaddleOCR cost-saving pre-gate (quality short-circuit before DI/CU)')
+param enablePaddlePregate bool = false
+
 @description('Default extraction tier when a dataset or request does not specify one')
 @allowed([
   'economy'
@@ -227,6 +230,7 @@ module containerApps 'modules/container-apps.bicep' = {
     contentUnderstandingEndpoint: aiServices.outputs.aiServicesEndpoint
     extractionBackend: extractionBackend
     enableImagePreprocessing: enableImagePreprocessing
+    enablePaddlePregate: enablePaddlePregate
     defaultExtractionTier: defaultExtractionTier
     pricingUseRetailApi: pricingUseRetailApi
     routingLowQualityPageFraction: routingLowQualityPageFraction

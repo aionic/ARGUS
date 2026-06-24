@@ -77,6 +77,28 @@ param contentUnderstandingCompletionModel string = ''
 @description('Content Understanding default embedding model deployment name')
 param contentUnderstandingEmbeddingModel string = ''
 
+@description('PaddleOCR quality-probe container image')
+param paddleOcrImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
+@description('Enable the PaddleOCR pre-gate (cost-saving quality short-circuit before DI/CU)')
+param enablePaddlePregate bool = false
+
+@description('PaddleOCR pre-gate behavior on a low-quality verdict')
+@allowed([
+  'block'
+  'advisory'
+])
+param paddlePregateMode string = 'block'
+
+@description('Flag if mean PaddleOCR line confidence is below this')
+param paddleConfidenceMeanMin string = '0.80'
+
+@description('Flag if the fraction of low-confidence PaddleOCR lines exceeds this')
+param paddleConfidenceLowFracMax string = '0.25'
+
+@description('A PaddleOCR line below this score counts as low confidence')
+param paddleConfidenceWordMin string = '0.70'
+
 // Key Vault
 param keyVaultUri string
 
@@ -169,6 +191,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'EXTRACTION_BACKEND', value: extractionBackend }
             { name: 'CONTENT_UNDERSTANDING_COMPLETION_MODEL', value: contentUnderstandingCompletionModel }
             { name: 'CONTENT_UNDERSTANDING_EMBEDDING_MODEL', value: contentUnderstandingEmbeddingModel }
+            // PaddleOCR cost-saving pre-gate (self-hosted quality probe before DI/CU)
+            { name: 'ENABLE_PADDLE_PREGATE', value: toLower(string(enablePaddlePregate)) }
+            { name: 'PADDLE_PREGATE_MODE', value: paddlePregateMode }
+            { name: 'PADDLE_OCR_URL', value: 'https://${paddleOcrApp.properties.configuration.ingress.fqdn}' }
+            { name: 'PADDLE_CONFIDENCE_MEAN_MIN', value: paddleConfidenceMeanMin }
+            { name: 'PADDLE_CONFIDENCE_LOW_FRAC_MAX', value: paddleConfidenceLowFracMax }
+            { name: 'PADDLE_CONFIDENCE_WORD_MIN', value: paddleConfidenceWordMin }
             // Image quality preprocessing (OpenCV enhance_retry)
             { name: 'ENABLE_IMAGE_PREPROCESSING', value: toLower(string(enableImagePreprocessing)) }
             // Cost-effective summary model (empty = use main deployment)
@@ -219,6 +248,68 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     }
   }
   tags: serviceResourceTags
+}
+
+resource paddleOcrApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: 'ca-argus-paddleocr'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userManagedIdentityId}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppEnvironment.id
+    configuration: {
+      // Internal-only ingress: reachable from the backend within the Container Apps
+      // environment, never exposed to the internet.
+      ingress: {
+        external: false
+        targetPort: 8000
+      }
+      registries: [
+        {
+          server: containerRegistryLoginServer
+          identity: userManagedIdentityId
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'paddleocr'
+          image: paddleOcrImage
+          resources: {
+            cpu: json('2.0')
+            memory: '4Gi'
+          }
+          env: [
+            { name: 'PADDLE_LANG', value: 'en' }
+            { name: 'PADDLE_USE_ANGLE_CLS', value: 'true' }
+            { name: 'PADDLE_WORD_MIN', value: paddleConfidenceWordMin }
+          ]
+        }
+      ]
+      // Scale-to-zero: the probe only runs during document processing, so idle cost
+      // is ~free; cold start (model load) is acceptable for batch document flows.
+      scale: {
+        minReplicas: 0
+        maxReplicas: 3
+        rules: [
+          {
+            name: 'http-rule'
+            http: {
+              metadata: {
+                concurrentRequests: '4'
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+  tags: union(tags, { 'azd-service-name': 'paddleocr' })
 }
 
 resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
@@ -294,6 +385,8 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
 
 output containerAppName string = containerApp.name
 output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
+output paddleOcrAppName string = paddleOcrApp.name
+output paddleOcrAppFqdn string = paddleOcrApp.properties.configuration.ingress.fqdn
 output frontendAppName string = frontendApp.name
 output frontendAppFqdn string = frontendApp.properties.configuration.ingress.fqdn
 output containerAppEnvironmentId string = containerAppEnvironment.id

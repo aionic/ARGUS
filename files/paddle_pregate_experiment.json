@@ -1,0 +1,400 @@
+{
+  "thresholds": {
+    "mean_min": 0.8,
+    "low_frac_max": 0.25,
+    "word_min": 0.7
+  },
+  "n_samples": 37,
+  "n_blocked": 3,
+  "n_passed": 34,
+  "known_bad": [
+    "bad.png"
+  ],
+  "recall_on_known_bad": 1.0,
+  "labeled_good_count": 22,
+  "false_positives_on_labeled_good": 0,
+  "false_positive_rate": 0.0,
+  "di_cu_calls_avoided": 3,
+  "est_usd_saved": 0.03,
+  "results": [
+    {
+      "file": "20211210NE1000001_dfnc.tif",
+      "mean": 0.9657,
+      "frac_low": 0.0103,
+      "n_lines": 97,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000031_nfnb.00000.tif",
+      "mean": 0.9344,
+      "frac_low": 0.0816,
+      "n_lines": 49,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000035_dfnc.tif",
+      "mean": 0.9582,
+      "frac_low": 0.0492,
+      "n_lines": 61,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000044_nfnb.00000.tif",
+      "mean": 0.9153,
+      "frac_low": 0.0469,
+      "n_lines": 64,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000053_dfnc.tif",
+      "mean": 0.9797,
+      "frac_low": 0.0,
+      "n_lines": 102,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000104_dfnc.tif",
+      "mean": 0.9602,
+      "frac_low": 0.0154,
+      "n_lines": 65,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000112_dfnc.tif",
+      "mean": 0.9494,
+      "frac_low": 0.0385,
+      "n_lines": 78,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000131_dfnc.tif",
+      "mean": 0.9629,
+      "frac_low": 0.0115,
+      "n_lines": 87,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000176_dfnc.tif",
+      "mean": 0.9177,
+      "frac_low": 0.1667,
+      "n_lines": 66,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000190_dfnc.tif",
+      "mean": 0.946,
+      "frac_low": 0.0444,
+      "n_lines": 90,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000200_dfnc.tif",
+      "mean": 0.9828,
+      "frac_low": 0.0,
+      "n_lines": 88,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000210_dfnc.tif",
+      "mean": 0.9695,
+      "frac_low": 0.0189,
+      "n_lines": 106,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000226_nfnb.00000.tif",
+      "mean": 0.9206,
+      "frac_low": 0.0649,
+      "n_lines": 77,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000294_nfnb.00000.tif",
+      "mean": 0.9535,
+      "frac_low": 0.0345,
+      "n_lines": 87,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000356_dfnc.tif",
+      "mean": 0.9542,
+      "frac_low": 0.0122,
+      "n_lines": 82,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000385_dfnc.tif",
+      "mean": 0.9605,
+      "frac_low": 0.0192,
+      "n_lines": 52,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000547_dfnc.tif",
+      "mean": 0.9765,
+      "frac_low": 0.0103,
+      "n_lines": 97,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000800_nfnb.00000.tif",
+      "mean": 0.9564,
+      "frac_low": 0.0488,
+      "n_lines": 82,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000807_dfnc.tif",
+      "mean": 0.9692,
+      "frac_low": 0.0381,
+      "n_lines": 105,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000808_dfnc.tif",
+      "mean": 0.9331,
+      "frac_low": 0.1351,
+      "n_lines": 74,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000884_nfnb.00000.tif",
+      "mean": 0.9536,
+      "frac_low": 0.0763,
+      "n_lines": 131,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "20211210NE1000891_dfnc.tif",
+      "mean": 0.9606,
+      "frac_low": 0.0154,
+      "n_lines": 65,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": true
+    },
+    {
+      "file": "250128SB1001368.00004.tif",
+      "mean": 0.961,
+      "frac_low": 0.0,
+      "n_lines": 38,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "250205C22000227.00012.tif",
+      "mean": 0.9706,
+      "frac_low": 0.0,
+      "n_lines": 30,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "250205C22001544.00004.tif",
+      "mean": 0.9756,
+      "frac_low": 0.0095,
+      "n_lines": 105,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "4106000020_CF_IL_HW Redacted.tiff",
+      "mean": 0.8799,
+      "frac_low": 0.0976,
+      "n_lines": 82,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "4106000027_CF_FL_HW.tiff",
+      "mean": 0.978,
+      "frac_low": 0.0,
+      "n_lines": 72,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "4106000043_CF_IN_HW.tiff",
+      "mean": 0.9303,
+      "frac_low": 0.0674,
+      "n_lines": 89,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "4106001767_SG_CA_HW Redated.tiff",
+      "mean": 0.9486,
+      "frac_low": 0.0227,
+      "n_lines": 88,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "EO7UGK9Bprod.tiff",
+      "mean": 0.9309,
+      "frac_low": 0.0085,
+      "n_lines": 117,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "WO7U9NJQprod.tiff",
+      "mean": 0.6207,
+      "frac_low": 0.8889,
+      "n_lines": 18,
+      "blocked": true,
+      "reasons": [
+        "low_mean(0.62<0.80)",
+        "high_frac_low(0.89>0.25)"
+      ],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "WO7U9OB4prod.tiff",
+      "mean": 0.9247,
+      "frac_low": 0.0429,
+      "n_lines": 70,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "WO7U9OZ0.tiff",
+      "mean": 0.8626,
+      "frac_low": 0.1864,
+      "n_lines": 59,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "WO7U9QP0.tiff",
+      "mean": 0.8809,
+      "frac_low": 0.1688,
+      "n_lines": 77,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "WO7U9R3I.tiff",
+      "mean": 0.8531,
+      "frac_low": 0.1538,
+      "n_lines": 52,
+      "blocked": false,
+      "reasons": [],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "WO7U9SLIprod.tiff",
+      "mean": 0.6356,
+      "frac_low": 0.7407,
+      "n_lines": 27,
+      "blocked": true,
+      "reasons": [
+        "low_mean(0.64<0.80)",
+        "high_frac_low(0.74>0.25)"
+      ],
+      "is_known_bad": false,
+      "is_labeled_good": false
+    },
+    {
+      "file": "bad.png",
+      "mean": 0.6207,
+      "frac_low": 0.8889,
+      "n_lines": 18,
+      "blocked": true,
+      "reasons": [
+        "low_mean(0.62<0.80)",
+        "high_frac_low(0.89>0.25)"
+      ],
+      "is_known_bad": true,
+      "is_labeled_good": false
+    }
+  ]
+}

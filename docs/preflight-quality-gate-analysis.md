@@ -203,3 +203,91 @@ thresholds be re-tuned from real production distributions.
 - On the CU backend, evaluate whether CU's own OCR exposes a span/line confidence we
   could harvest to avoid the extra `prebuilt-read` probe cost.
 - Calibrate thresholds per dataset once a larger labeled distribution is available.
+
+## 11. PaddleOCR pre-gate experiment (cost-saving probe)
+
+Section 4 established that **recognition confidence** is the only reliable legibility
+signal. The Document Intelligence (DI) `prebuilt-read` probe that produces it, however,
+is itself a *paid* Document Intelligence call — so on the CU backend we pay for DI just
+to decide whether to pay for CU. This experiment asks: can a **self-hosted, ~free OCR
+engine** produce the same confidence signal *before* any paid call, and short-circuit
+bad scans to save the DI **and** CU/GPT spend?
+
+### 11.1 Design
+
+A standalone **PaddleOCR** microservice (FastAPI, PP-OCRv4 English, CPU) runs as an
+**internal-ingress Azure Container App** (`ca-argus-paddleocr`, scale-to-zero 0–3,
+2 vCPU / 4 GiB). The backend renders page images and POSTs them to `POST /assess`, which
+returns aggregate per-line recognition confidence `{mean, frac_low, min, n_lines}` — the
+same shape as the DI word-confidence gate.
+
+- **Insertion point:** `blob_processing.process_blob`, immediately after `file_paths`
+  is built and **before** the CU-vs-GPT extraction branch (so no paid call has run yet).
+- **Verdict:** `bad` if `mean < PADDLE_CONFIDENCE_MEAN_MIN` (0.80) **or**
+  `frac_low > PADDLE_CONFIDENCE_LOW_FRAC_MAX` (0.25); low line = score `< PADDLE_CONFIDENCE_WORD_MIN` (0.70).
+  These mirror the DI-gate thresholds.
+- **Modes:** `block` (default) short-circuits — skips DI/CU, flags the document
+  (`stage=paddle_pregate`), records the avoided cost, and marks it complete for review.
+  `advisory` flags only and proceeds.
+- **Enablement:** opt-in — `ENABLE_PADDLE_PREGATE` (default off) with a per-dataset
+  `processing_options.enable_paddle_pregate` override. Requires `PADDLE_OCR_URL`.
+- **Backstop:** the DI word-confidence gate (section 4) still runs for any document that
+  *passes* Paddle, so Paddle only ever *adds* recall — it never weakens it.
+
+### 11.2 Calibration results (37 samples, `/assess`, default thresholds)
+
+| Metric | Result |
+| --- | --- |
+| Recall on known-bad (`bad.png` ≡ `WO7U9NJQprod`) | **1.0** (blocked: mean 0.62, frac_low 0.89) |
+| False positives on 22 labeled-good claims | **0** (0.0%) |
+| Total blocked | 3 — `bad.png`, `WO7U9NJQprod` (= bad.png), `WO7U9SLIprod` (mean 0.64, genuinely degraded) |
+| Good-claim confidence range | mean 0.88–0.98, frac_low ≤ 0.17 |
+
+Paddle cleanly separates the worst scans from legitimate sparse/structured forms with
+**zero false positives** on real claims. One borderline degraded invoice that the DI gate
+flagged (`WO7U9R3I`, DI conf 0.78) reads 0.85 on Paddle and passes the pre-gate — the DI
+backstop still catches it downstream, exactly as designed (Paddle is the cheap first
+filter, DI the precise backstop). Harness: `scripts/paddle_pregate_experiment.py`;
+report: `files/paddle_pregate_experiment.json`.
+
+### 11.3 Live end-to-end validation (Azure)
+
+Deployed to `rg-argus-dev` and exercised through the live API:
+
+| Document | Paddle | `extraction_backend_used` | Flagged | Cost |
+| --- | --- | --- | --- | --- |
+| `bad.png` | mean 0.68 → **block** | `skipped_paddle_pregate` | `paddle_pregate` | CU call **avoided** |
+| `NE1000001` (good) | mean 0.97 → pass | `content_understanding` | no | $0.01/page |
+
+The Paddle app cold-started from zero on first call (proving internal-ingress
+reachability), blocked `bad.png` before Content Understanding ran, and let the good claim
+flow through normally. Stored telemetry: `properties.paddle_pregate` (stats) and
+`properties.flag` (`stage=paddle_pregate`).
+
+### 11.4 Cost model
+
+Per blocked document the pipeline avoids the DI `prebuilt-read` probe **and** the
+CU/GPT extraction call (≈ $0.01/page CU on this dataset, more on GPT tiers). PaddleOCR
+compute is scale-to-zero, so it bills only while assessing. The pre-gate therefore turns
+the *most expensive* inputs (illegible scans that would extract poorly anyway) into the
+*cheapest* outcome (a flag + review routing).
+
+## 12. OpenCV's role, re-evaluated
+
+The original preprocessor used OpenCV pixel metrics (Laplacian blur variance,
+brightness/contrast, skew) as a quality **gate**. Sections 2–3 showed this is the wrong
+gate: it *missed* `bad.png` (blur 5190, contrast 73 — black artifacts inflate the
+metrics) and *false-flagged ~89%* of legitimate sparse B&W forms before per-dataset
+tuning. With Paddle + DI now owning the legibility decision on recognition confidence,
+OpenCV's pixel metrics are **demoted from gating to advisory**:
+
+- `ENABLE_QUALITY_FLAGGING` (default **off**) gates whether cv2 metrics set a hard
+  `quality` flag. cv2 metrics are still **computed and stored** (`properties.image_quality`,
+  `image_quality_warning`) as hints for the rescan-email screen — they just no longer
+  block or route on their own.
+- OpenCV's genuinely additive capability is **enhancement** (`enhance_image`: deskew,
+  denoise, CLAHE, upscale, binarize), which *fixes* borderline scans rather than judging
+  them. This remains available but **opt-in** (`enable_enhancement`) and unvalidated on
+  this corpus — it should be A/B'd against extraction accuracy before being relied upon,
+  since aggressive denoise can erase faint handwriting.
+

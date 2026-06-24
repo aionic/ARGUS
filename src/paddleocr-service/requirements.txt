@@ -1,0 +1,13 @@
+# PaddleOCR quality-probe service — Python dependencies (CPU).
+#
+# NOTE: the Docker image bases on `paddlepaddle/paddle:2.6.2` (paddlepaddle is
+# preinstalled there — the pip wheel segfaults on slim bases), so the Dockerfile
+# installs only the packages below on top. This file is kept for local development
+# (`pip install -r requirements.txt` into a venv with paddlepaddle already present).
+# paddlepaddle==2.6.2  # provided by the base image; install manually for local dev
+paddleocr==2.7.3
+numpy==1.26.4
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+pillow==10.3.0
