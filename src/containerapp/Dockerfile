@@ -57,6 +57,7 @@ COPY dependencies.py .
 COPY logic_app_manager.py .
 COPY blob_processing.py .
 COPY api_routes.py .
+COPY profiling.py .
 COPY mcp_server.py .
 COPY pyproject.toml uv.lock ./
 
