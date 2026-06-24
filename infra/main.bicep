@@ -26,6 +26,29 @@ param extractionBackend string = 'gpt'
 @description('Enable OpenCV image quality preprocessing/enhancement by default')
 param enableImagePreprocessing bool = false
 
+@description('Default extraction tier when a dataset or request does not specify one')
+@allowed([
+  'economy'
+  'standard'
+  'premium'
+])
+param defaultExtractionTier string = 'standard'
+
+@description('Whether pricing should use Azure Retail Prices API before fallback prices')
+param pricingUseRetailApi bool = true
+
+@description('Fraction of low-quality pages that routes a document to review')
+param routingLowQualityPageFraction string = '0.5'
+
+@description('Minimum low-quality page count that routes a document to review')
+param routingLowQualityMinPages string = '1'
+
+@description('Minimum OCR character count before OCR is considered unreadable')
+param routingMinOcrTextLength string = '20'
+
+@description('Maximum page count eligible for economy tier auto-routing')
+param routingEconomyMaxPages string = '1'
+
 @description('Deploy a cheaper OpenAI model for the summary stage cost experiment')
 param deploySummaryModel bool = true
 
@@ -204,6 +227,12 @@ module containerApps 'modules/container-apps.bicep' = {
     contentUnderstandingEndpoint: aiServices.outputs.aiServicesEndpoint
     extractionBackend: extractionBackend
     enableImagePreprocessing: enableImagePreprocessing
+    defaultExtractionTier: defaultExtractionTier
+    pricingUseRetailApi: pricingUseRetailApi
+    routingLowQualityPageFraction: routingLowQualityPageFraction
+    routingLowQualityMinPages: routingLowQualityMinPages
+    routingMinOcrTextLength: routingMinOcrTextLength
+    routingEconomyMaxPages: routingEconomyMaxPages
     summaryModelDeploymentName: aiServices.outputs.summaryModelDeploymentName
     contentUnderstandingCompletionModel: aiServices.outputs.summaryModelDeploymentName
     contentUnderstandingEmbeddingModel: aiServices.outputs.embeddingModelDeploymentName

@@ -34,6 +34,7 @@ import {
   SelectValue 
 } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
 import { 
   Accordion, 
@@ -48,28 +49,321 @@ import {
 } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { backendClient } from "@/lib/api-client"
+import {
+  backendClient,
+  type Configuration,
+  type DatasetConfig,
+  type EffectiveConfig,
+  type ProcessingOptions,
+  type Tier,
+} from "@/lib/api-client"
 
-interface DatasetConfig {
-  model_prompt: string
-  example_schema: Record<string, unknown>
-  max_pages_per_chunk?: number
-  processing_options?: {
-    include_ocr: boolean
-    include_images: boolean
-    enable_summary: boolean
-    enable_evaluation: boolean
-    extraction_backend?: string
-    enable_preprocessing?: boolean
-    enable_enhancement?: boolean
-    skip_if_still_bad?: boolean
+type ProcessingOptionState = Required<
+  Pick<
+    ProcessingOptions,
+    | "include_ocr"
+    | "include_images"
+    | "enable_summary"
+    | "enable_evaluation"
+    | "use_rules_engine"
+    | "enable_preprocessing"
+  >
+> & {
+  extraction_backend: NonNullable<ProcessingOptions["extraction_backend"]>
+  tier: Tier
+  enable_enhancement: boolean
+  skip_if_still_bad: boolean
+}
+
+type BooleanProcessingOptionKey =
+  | "include_ocr"
+  | "include_images"
+  | "enable_summary"
+  | "enable_evaluation"
+  | "use_rules_engine"
+  | "enable_preprocessing"
+
+const TIER_OPTIONS: Array<{
+  value: Tier
+  label: string
+  cost: string
+  description: string
+}> = [
+  {
+    value: "economy",
+    label: "Economy",
+    cost: "$",
+    description:
+      "Lowest cost. Rules engine + cheap model. No vision or evaluation. Best for clean, simple, high-volume docs.",
+  },
+  {
+    value: "standard",
+    label: "Standard",
+    cost: "$$",
+    description: "Balanced. Cheap model + OCR, optional vision. Good default.",
+  },
+  {
+    value: "premium",
+    label: "Premium",
+    cost: "$$$",
+    description:
+      "Highest quality. Full vision model + evaluation. Best for complex/low-quality docs.",
+  },
+]
+
+const DEFAULT_PROCESSING_OPTIONS: ProcessingOptionState = {
+  include_ocr: true,
+  include_images: true,
+  enable_summary: true,
+  enable_evaluation: false,
+  extraction_backend: "gpt",
+  tier: "standard",
+  use_rules_engine: true,
+  enable_preprocessing: false,
+  enable_enhancement: true,
+  skip_if_still_bad: false,
+}
+
+const TIER_PRESETS: Record<
+  Tier,
+  Pick<
+    ProcessingOptionState,
+    | "include_ocr"
+    | "include_images"
+    | "enable_summary"
+    | "enable_evaluation"
+    | "use_rules_engine"
+    | "enable_preprocessing"
+    | "extraction_backend"
+  >
+> = {
+  economy: {
+    include_ocr: true,
+    include_images: false,
+    enable_summary: true,
+    enable_evaluation: false,
+    use_rules_engine: true,
+    enable_preprocessing: false,
+    extraction_backend: "gpt",
+  },
+  standard: {
+    include_ocr: true,
+    include_images: true,
+    enable_summary: true,
+    enable_evaluation: false,
+    use_rules_engine: true,
+    enable_preprocessing: false,
+    extraction_backend: "gpt",
+  },
+  premium: {
+    include_ocr: true,
+    include_images: true,
+    enable_summary: true,
+    enable_evaluation: true,
+    use_rules_engine: false,
+    enable_preprocessing: true,
+    extraction_backend: "gpt",
+  },
+}
+
+const CAPABILITY_TOGGLES: Array<{
+  key: BooleanProcessingOptionKey
+  label: string
+  description: string
+  icon: React.ElementType
+}> = [
+  {
+    key: "include_ocr",
+    label: "OCR",
+    description: "Extract machine-readable text before AI extraction",
+    icon: FileText,
+  },
+  {
+    key: "include_images",
+    label: "Vision / images",
+    description: "Send page images to the extraction model",
+    icon: Eye,
+  },
+  {
+    key: "enable_summary",
+    label: "Summary",
+    description: "Generate a concise document summary",
+    icon: FileSearch,
+  },
+  {
+    key: "enable_evaluation",
+    label: "Evaluation",
+    description: "Run quality checks on extracted fields",
+    icon: ClipboardCheck,
+  },
+  {
+    key: "use_rules_engine",
+    label: "Rules engine",
+    description: "Use deterministic rules before model extraction",
+    icon: CheckCircle,
+  },
+  {
+    key: "enable_preprocessing",
+    label: "Image preprocessing",
+    description: "Improve image quality before extraction",
+    icon: Sparkles,
+  },
+]
+
+function applyTierPreset(options: ProcessingOptionState, tier: Tier): ProcessingOptionState {
+  return {
+    ...options,
+    ...TIER_PRESETS[tier],
+    tier,
   }
 }
 
-interface Configuration {
-  id?: string
-  partitionKey?: string
-  datasets: Record<string, DatasetConfig>
+function buildProcessingOptionState(datasetConfig?: DatasetConfig): ProcessingOptionState {
+  const savedOptions = datasetConfig?.processing_options ?? {}
+  const effectiveConfig: EffectiveConfig | undefined = datasetConfig?.effective_config
+
+  return {
+    ...DEFAULT_PROCESSING_OPTIONS,
+    tier: savedOptions.tier ?? datasetConfig?.tier ?? effectiveConfig?.tier ?? DEFAULT_PROCESSING_OPTIONS.tier,
+    include_ocr:
+      savedOptions.include_ocr ??
+      savedOptions.enable_ocr ??
+      effectiveConfig?.enable_ocr ??
+      DEFAULT_PROCESSING_OPTIONS.include_ocr,
+    include_images:
+      savedOptions.include_images ??
+      savedOptions.enable_images ??
+      effectiveConfig?.enable_images ??
+      DEFAULT_PROCESSING_OPTIONS.include_images,
+    enable_summary:
+      savedOptions.enable_summary ??
+      effectiveConfig?.enable_summary ??
+      DEFAULT_PROCESSING_OPTIONS.enable_summary,
+    enable_evaluation:
+      savedOptions.enable_evaluation ??
+      effectiveConfig?.enable_evaluation ??
+      DEFAULT_PROCESSING_OPTIONS.enable_evaluation,
+    extraction_backend:
+      savedOptions.extraction_backend ?? DEFAULT_PROCESSING_OPTIONS.extraction_backend,
+    use_rules_engine:
+      savedOptions.use_rules_engine ??
+      datasetConfig?.use_rules_engine ??
+      effectiveConfig?.use_rules_engine ??
+      DEFAULT_PROCESSING_OPTIONS.use_rules_engine,
+    enable_preprocessing:
+      savedOptions.enable_preprocessing ??
+      effectiveConfig?.enable_preprocessing ??
+      DEFAULT_PROCESSING_OPTIONS.enable_preprocessing,
+    enable_enhancement:
+      savedOptions.enable_enhancement ?? DEFAULT_PROCESSING_OPTIONS.enable_enhancement,
+    skip_if_still_bad:
+      savedOptions.skip_if_still_bad ?? DEFAULT_PROCESSING_OPTIONS.skip_if_still_bad,
+  }
+}
+
+interface TierControlsProps {
+  idPrefix: string
+  options: ProcessingOptionState
+  onChange: (options: ProcessingOptionState) => void
+}
+
+function TierControls({ idPrefix, options, onChange }: TierControlsProps) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label className="text-base">Extraction Tier</Label>
+        <RadioGroup
+          value={options.tier}
+          onValueChange={(value) => onChange(applyTierPreset(options, value as Tier))}
+          className="grid gap-2 md:grid-cols-3"
+        >
+          {TIER_OPTIONS.map((tier) => (
+            <div
+              key={tier.value}
+              className={`rounded-lg border p-3 transition-colors ${
+                options.tier === tier.value ? "border-primary bg-primary/5" : "border-border"
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <RadioGroupItem
+                  value={tier.value}
+                  id={`${idPrefix}_tier_${tier.value}`}
+                  className="mt-1"
+                />
+                <Label
+                  htmlFor={`${idPrefix}_tier_${tier.value}`}
+                  className="flex flex-1 cursor-pointer flex-col gap-2"
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{tier.label}</span>
+                    <Badge variant="outline" className="font-mono">
+                      {tier.cost}
+                    </Badge>
+                  </span>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    {tier.description}
+                  </span>
+                </Label>
+              </div>
+            </div>
+          ))}
+        </RadioGroup>
+      </div>
+
+      <Accordion type="single" collapsible className="rounded-lg border">
+        <AccordionItem value="advanced-tier-overrides" className="border-0">
+          <AccordionTrigger className="px-3 py-2 text-sm">
+            Advanced capability overrides
+          </AccordionTrigger>
+          <AccordionContent className="space-y-4 px-3 pb-3">
+            <div className="space-y-2">
+              <Label htmlFor={`${idPrefix}_extraction_backend`} className="text-sm">
+                Extraction Backend
+              </Label>
+              <Select
+                value={options.extraction_backend}
+                onValueChange={(value) =>
+                  onChange({ ...options, extraction_backend: value })
+                }
+              >
+                <SelectTrigger id={`${idPrefix}_extraction_backend`}>
+                  <SelectValue placeholder="Select extraction backend" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gpt">GPT (vision)</SelectItem>
+                  <SelectItem value="content_understanding">Content Understanding</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              {CAPABILITY_TOGGLES.map(({ key, label, description, icon: Icon }) => (
+                <div key={key} className="flex items-start space-x-3">
+                  <Checkbox
+                    id={`${idPrefix}_${key}`}
+                    checked={options[key]}
+                    onCheckedChange={(checked) =>
+                      onChange({ ...options, [key]: !!checked })
+                    }
+                  />
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`${idPrefix}_${key}`}
+                      className="flex cursor-pointer items-center gap-2"
+                    >
+                      <Icon className="h-4 w-4" />
+                      {label}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    </div>
+  )
 }
 
 export default function ProcessFilesPage() {
@@ -78,15 +372,8 @@ export default function ProcessFilesPage() {
   const [modelPrompt, setModelPrompt] = React.useState("")
   const [exampleSchema, setExampleSchema] = React.useState("")
   const [maxPagesPerChunk, setMaxPagesPerChunk] = React.useState(10)
-  const [processingOptions, setProcessingOptions] = React.useState({
-    include_ocr: true,
-    include_images: true,
-    enable_summary: true,
-    enable_evaluation: true,
-    extraction_backend: "gpt",
-    enable_preprocessing: false,
-    enable_enhancement: true,
-    skip_if_still_bad: false
+  const [processingOptions, setProcessingOptions] = React.useState<ProcessingOptionState>({
+    ...DEFAULT_PROCESSING_OPTIONS,
   })
   const [files, setFiles] = React.useState<File[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
@@ -99,15 +386,8 @@ export default function ProcessFilesPage() {
   const [newModelPrompt, setNewModelPrompt] = React.useState("Extract all data.")
   const [newExampleSchema, setNewExampleSchema] = React.useState("{}")
   const [newMaxPages, setNewMaxPages] = React.useState(10)
-  const [newProcessingOptions, setNewProcessingOptions] = React.useState({
-    include_ocr: true,
-    include_images: true,
-    enable_summary: true,
-    enable_evaluation: true,
-    extraction_backend: "gpt",
-    enable_preprocessing: false,
-    enable_enhancement: true,
-    skip_if_still_bad: false
+  const [newProcessingOptions, setNewProcessingOptions] = React.useState<ProcessingOptionState>({
+    ...DEFAULT_PROCESSING_OPTIONS,
   })
 
   // Load configuration on mount
@@ -122,17 +402,7 @@ export default function ProcessFilesPage() {
       setModelPrompt(datasetConfig.model_prompt || "")
       setExampleSchema(JSON.stringify(datasetConfig.example_schema || {}, null, 2))
       setMaxPagesPerChunk(datasetConfig.max_pages_per_chunk || 10)
-      setProcessingOptions({
-        include_ocr: true,
-        include_images: true,
-        enable_summary: true,
-        enable_evaluation: true,
-        extraction_backend: "gpt",
-        enable_preprocessing: false,
-        enable_enhancement: true,
-        skip_if_still_bad: false,
-        ...datasetConfig.processing_options
-      })
+      setProcessingOptions(buildProcessingOptionState(datasetConfig))
     }
   }, [selectedDataset, configuration])
 
@@ -140,8 +410,8 @@ export default function ProcessFilesPage() {
     setIsLoading(true)
     try {
       const config = await backendClient.getConfiguration()
-      setConfiguration(config as unknown as Configuration)
-      const datasets = Object.keys((config as { datasets?: Record<string, unknown> }).datasets || {})
+      setConfiguration(config)
+      const datasets = Object.keys(config.datasets || {})
       if (datasets.length > 0 && !selectedDataset) {
         setSelectedDataset(datasets[0])
       }
@@ -174,6 +444,7 @@ export default function ProcessFilesPage() {
         datasets: {
           ...configuration.datasets,
           [selectedDataset]: {
+            ...configuration.datasets[selectedDataset],
             model_prompt: modelPrompt,
             example_schema: parsedSchema,
             max_pages_per_chunk: maxPagesPerChunk,
@@ -214,10 +485,11 @@ export default function ProcessFilesPage() {
         return
       }
 
+      const baseConfig: Configuration = configuration ?? { datasets: {} }
       const updatedConfig: Configuration = {
-        ...configuration,
+        ...baseConfig,
         datasets: {
-          ...(configuration?.datasets || {}),
+          ...baseConfig.datasets,
           [newDatasetName]: {
             model_prompt: newModelPrompt,
             example_schema: parsedSchema,
@@ -236,16 +508,7 @@ export default function ProcessFilesPage() {
       setNewModelPrompt("Extract all data.")
       setNewExampleSchema("{}")
       setNewMaxPages(10)
-      setNewProcessingOptions({
-        include_ocr: true,
-        include_images: true,
-        enable_summary: true,
-        enable_evaluation: true,
-        extraction_backend: "gpt",
-        enable_preprocessing: false,
-        enable_enhancement: true,
-        skip_if_still_bad: false
-      })
+      setNewProcessingOptions({ ...DEFAULT_PROCESSING_OPTIONS })
 
       toast.success(`Dataset "${newDatasetName}" created successfully!`)
     } catch (error) {
@@ -398,78 +661,11 @@ export default function ProcessFilesPage() {
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <Label>Processing Options</Label>
-                    <div className="space-y-2">
-                      <Label htmlFor="new_extraction_backend" className="text-sm">Extraction Backend</Label>
-                      <Select
-                        value={newProcessingOptions.extraction_backend}
-                        onValueChange={(value) =>
-                          setNewProcessingOptions({ ...newProcessingOptions, extraction_backend: value })
-                        }
-                      >
-                        <SelectTrigger id="new_extraction_backend">
-                          <SelectValue placeholder="Select extraction backend" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="gpt">GPT (vision)</SelectItem>
-                          <SelectItem value="content_understanding">Content Understanding</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="new_include_ocr"
-                          checked={newProcessingOptions.include_ocr}
-                          onCheckedChange={(checked) =>
-                            setNewProcessingOptions({ ...newProcessingOptions, include_ocr: !!checked })
-                          }
-                        />
-                        <Label htmlFor="new_include_ocr" className="text-sm">OCR</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="new_include_images"
-                          checked={newProcessingOptions.include_images}
-                          onCheckedChange={(checked) =>
-                            setNewProcessingOptions({ ...newProcessingOptions, include_images: !!checked })
-                          }
-                        />
-                        <Label htmlFor="new_include_images" className="text-sm">GPT Vision</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="new_enable_summary"
-                          checked={newProcessingOptions.enable_summary}
-                          onCheckedChange={(checked) => 
-                            setNewProcessingOptions({ ...newProcessingOptions, enable_summary: !!checked })
-                          }
-                        />
-                        <Label htmlFor="new_enable_summary" className="text-sm">Summary</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="new_enable_evaluation"
-                          checked={newProcessingOptions.enable_evaluation}
-                          onCheckedChange={(checked) => 
-                            setNewProcessingOptions({ ...newProcessingOptions, enable_evaluation: !!checked })
-                          }
-                        />
-                        <Label htmlFor="new_enable_evaluation" className="text-sm">Evaluation</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="new_enable_preprocessing"
-                          checked={newProcessingOptions.enable_preprocessing}
-                          onCheckedChange={(checked) =>
-                            setNewProcessingOptions({ ...newProcessingOptions, enable_preprocessing: !!checked })
-                          }
-                        />
-                        <Label htmlFor="new_enable_preprocessing" className="text-sm">Image Preprocessing</Label>
-                      </div>
-                    </div>
-                  </div>
+                  <TierControls
+                    idPrefix="new"
+                    options={newProcessingOptions}
+                    onChange={setNewProcessingOptions}
+                  />
 
                   <Button 
                     onClick={handleAddDataset}
@@ -568,122 +764,11 @@ export default function ProcessFilesPage() {
 
                   {/* Processing Options */}
                   <div className="space-y-3">
-                    <Label className="text-base">Processing Options</Label>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="extraction_backend">Extraction Backend</Label>
-                      <Select
-                        value={processingOptions.extraction_backend}
-                        onValueChange={(value) =>
-                          setProcessingOptions({ ...processingOptions, extraction_backend: value })
-                        }
-                      >
-                        <SelectTrigger id="extraction_backend">
-                          <SelectValue placeholder="Select extraction backend" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="gpt">GPT (vision)</SelectItem>
-                          <SelectItem value="content_understanding">Content Understanding</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex items-start space-x-3">
-                        <Checkbox
-                          id="include_ocr"
-                          checked={processingOptions.include_ocr}
-                          onCheckedChange={(checked) => 
-                            setProcessingOptions({ ...processingOptions, include_ocr: !!checked })
-                          }
-                        />
-                        <div className="space-y-1">
-                          <Label htmlFor="include_ocr" className="flex items-center gap-2 cursor-pointer">
-                            <FileText className="h-4 w-4" />
-                            Run OCR Processing
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Extract text using Document Intelligence
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start space-x-3">
-                        <Checkbox
-                          id="include_images"
-                          checked={processingOptions.include_images}
-                          onCheckedChange={(checked) => 
-                            setProcessingOptions({ ...processingOptions, include_images: !!checked })
-                          }
-                        />
-                        <div className="space-y-1">
-                          <Label htmlFor="include_images" className="flex items-center gap-2 cursor-pointer">
-                            <Eye className="h-4 w-4" />
-                            Run GPT Vision
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Process pages as images
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start space-x-3">
-                        <Checkbox
-                          id="enable_summary"
-                          checked={processingOptions.enable_summary}
-                          onCheckedChange={(checked) => 
-                            setProcessingOptions({ ...processingOptions, enable_summary: !!checked })
-                          }
-                        />
-                        <div className="space-y-1">
-                          <Label htmlFor="enable_summary" className="flex items-center gap-2 cursor-pointer">
-                            <FileSearch className="h-4 w-4" />
-                            Generate Summary
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Create document summary
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start space-x-3">
-                        <Checkbox
-                          id="enable_evaluation"
-                          checked={processingOptions.enable_evaluation}
-                          onCheckedChange={(checked) => 
-                            setProcessingOptions({ ...processingOptions, enable_evaluation: !!checked })
-                          }
-                        />
-                        <div className="space-y-1">
-                          <Label htmlFor="enable_evaluation" className="flex items-center gap-2 cursor-pointer">
-                            <ClipboardCheck className="h-4 w-4" />
-                            Enable Evaluation
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Validate extracted data
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start space-x-3">
-                        <Checkbox
-                          id="enable_preprocessing"
-                          checked={processingOptions.enable_preprocessing}
-                          onCheckedChange={(checked) =>
-                            setProcessingOptions({ ...processingOptions, enable_preprocessing: !!checked })
-                          }
-                        />
-                        <div className="space-y-1">
-                          <Label htmlFor="enable_preprocessing" className="flex items-center gap-2 cursor-pointer">
-                            <Sparkles className="h-4 w-4" />
-                            Image Preprocessing
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Improve image quality before extraction
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                    <TierControls
+                      idPrefix="edit"
+                      options={processingOptions}
+                      onChange={setProcessingOptions}
+                    />
 
                     {!isProcessingValid && (
                       <motion.div

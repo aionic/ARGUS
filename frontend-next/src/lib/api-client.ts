@@ -5,6 +5,109 @@
  */
 
 // Document types
+export type Tier = "economy" | "standard" | "premium"
+export type CostStage = "ocr" | "extraction" | "evaluation" | "summary" | "content_understanding"
+export type PricingSource = "azure_retail" | "fallback" | "mixed"
+export type FlagStage = "preflight" | "quality"
+
+export interface CostStageUsage {
+  stage: CostStage
+  model: string
+  input_tokens: number
+  output_tokens: number
+  usd: number
+}
+
+export interface Cost {
+  per_stage: CostStageUsage[]
+  total_input_tokens: number
+  total_output_tokens: number
+  total_usd: number
+  usd_per_page: number
+  pricing_source: PricingSource
+  model_breakdown: Record<string, number>
+}
+
+export type CostObject = Cost
+export type DocumentCost = Cost
+
+export interface EffectiveConfig {
+  tier: Tier
+  extraction_model: string
+  enable_ocr: boolean
+  enable_images: boolean
+  enable_evaluation: boolean
+  enable_summary: boolean
+  summary_model: string
+  use_rules_engine: boolean
+  enable_preprocessing: boolean
+}
+
+export interface FlagEmail {
+  sent_mock: boolean
+  to: string
+  subject: string
+  body: string
+  sent_at: string
+  message_id: string
+}
+
+export interface Flag {
+  flagged: boolean
+  reasons: string[]
+  stage: FlagStage
+  flagged_at: string
+  email?: FlagEmail
+}
+
+export type FlagObject = Flag
+export type DocumentFlag = Flag
+
+export interface FlaggedItem {
+  id: string
+  dataset: string
+  filename: string
+  reasons: string[]
+  stage: FlagStage
+  flagged_at: string
+  email_sent?: boolean
+}
+
+export interface ProfilingTierReport {
+  avg_usd_per_page: number
+  avg_tokens: number
+  success_rate: number
+  failure_types: Record<string, number>
+  quality_dist: Record<string, number>
+}
+
+export interface ProfilingReport {
+  per_tier: Record<string, ProfilingTierReport>
+}
+
+export interface GenerateFlagEmailResponse {
+  subject: string
+  body: string
+}
+
+export interface SendFlagEmailMockPayload {
+  document_id: string
+  to: string
+  subject: string
+  body: string
+}
+
+export interface SendFlagEmailMockResponse {
+  success: boolean
+  message_id: string
+  mock: boolean
+}
+
+export interface RunCostProfilingPayload {
+  dataset?: string
+  tiers: string[]
+}
+
 export interface DocumentState {
   file_landed?: boolean
   ocr_completed?: boolean
@@ -23,6 +126,8 @@ export interface DocumentProperties {
   dataset?: string
   total_time?: number
   total_time_seconds?: number
+  cost?: Cost
+  flag?: Flag
 }
 
 export interface DocumentExtractedData {
@@ -65,9 +170,16 @@ export interface DocumentsResponse {
 export interface ProcessingOptions {
   include_ocr?: boolean
   include_images?: boolean
+  enable_ocr?: boolean
+  enable_images?: boolean
   enable_summary?: boolean
   enable_evaluation?: boolean
   extraction_backend?: string
+  extraction_model?: string
+  summary_model?: string
+  tier?: Tier
+  use_rules_engine?: boolean
+  rules?: Record<string, unknown>
   enable_preprocessing?: boolean
   enable_enhancement?: boolean
   skip_if_still_bad?: boolean
@@ -80,6 +192,10 @@ export interface DatasetConfig {
   output_schema?: Record<string, unknown>
   example_schema?: Record<string, unknown>
   max_pages_per_chunk?: number
+  tier?: Tier
+  use_rules_engine?: boolean
+  rules?: Record<string, unknown>
+  effective_config?: EffectiveConfig
   processing_options?: ProcessingOptions
 }
 
@@ -339,6 +455,39 @@ class BackendClient {
     )
   }
 
+  async getFlaggedDocuments(): Promise<FlaggedItem[]> {
+    return this.fetch<FlaggedItem[]>("/api/documents/flagged")
+  }
+
+  async generateFlagEmail(
+    documentId: string,
+    promptTemplate?: string
+  ): Promise<GenerateFlagEmailResponse> {
+    return this.fetch<GenerateFlagEmailResponse>(
+      `/api/documents/${encodeURIComponent(documentId)}/flag-email/generate`,
+      {
+        method: "POST",
+        body: JSON.stringify(promptTemplate ? { prompt_template: promptTemplate } : {}),
+      }
+    )
+  }
+
+  async sendFlagEmailMock(
+    payload: SendFlagEmailMockPayload
+  ): Promise<SendFlagEmailMockResponse> {
+    return this.fetch<SendFlagEmailMockResponse>("/api/flag-email/send", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async runCostProfiling(payload: RunCostProfilingPayload): Promise<ProfilingReport> {
+    return this.fetch<ProfilingReport>("/api/profiling/run", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+  }
+
   async getDocumentFileUrl(documentId: string): Promise<string> {
     // The backend serves the file directly at /file endpoint
     // Return the URL for iframe/embed use
@@ -522,6 +671,27 @@ class BackendClient {
 
 // Export singleton instance
 export const backendClient = new BackendClient()
+
+export function getFlaggedDocuments(): Promise<FlaggedItem[]> {
+  return backendClient.getFlaggedDocuments()
+}
+
+export function generateFlagEmail(
+  documentId: string,
+  promptTemplate?: string
+): Promise<GenerateFlagEmailResponse> {
+  return backendClient.generateFlagEmail(documentId, promptTemplate)
+}
+
+export function sendFlagEmailMock(
+  payload: SendFlagEmailMockPayload
+): Promise<SendFlagEmailMockResponse> {
+  return backendClient.sendFlagEmailMock(payload)
+}
+
+export function runCostProfiling(payload: RunCostProfilingPayload): Promise<ProfilingReport> {
+  return backendClient.runCostProfiling(payload)
+}
 
 // Export the class for testing
 export { BackendClient }

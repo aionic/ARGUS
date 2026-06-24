@@ -486,6 +486,175 @@ az containerapp update \
 
 ---
 
+### 🧩 Extraction Backend: Content Understanding
+
+In addition to the default **GPT (vision)** extraction path, ARGUS supports **Azure AI Content Understanding (CU)** as a selectable, schema-driven extraction backend. CU performs OCR **and** typed field extraction in a single call directly from the dataset schema, and returns per-field confidence scores.
+
+- **Selectable at two levels**:
+  - **Solution-wide default** via the `EXTRACTION_BACKEND` env var (`gpt` | `content_understanding`, default `gpt`).
+  - **Per-dataset override** via `processing_options.extraction_backend` (set from the dataset settings UI or the `/api/configuration` endpoint).
+- When CU is active, GPT evaluation is skipped by default (CU returns its own confidence); summary still runs.
+
+```bash
+# Solution-wide default
+EXTRACTION_BACKEND=content_understanding   # or "gpt" (default)
+
+# Content Understanding configuration (resource data-plane)
+AZURE_CONTENT_UNDERSTANDING_ENDPOINT=https://<aiservices-account>.cognitiveservices.azure.com/
+CONTENT_UNDERSTANDING_API_VERSION=2025-11-01
+CONTENT_UNDERSTANDING_COMPLETION_MODEL=gpt-4.1-mini          # resource default completion model
+CONTENT_UNDERSTANDING_EMBEDDING_MODEL=text-embedding-3-large # resource default embedding model
+```
+
+> **CU data-plane setup notes**: CU requires the AI Services account to have **resource defaults** set before custom analyzers can be created — both a **completion** model (`gpt-4.1-mini`) and an **embedding** model (`text-embedding-3-large`) must be deployed at the account. ARGUS sets these defaults automatically on first CU use (idempotent `PATCH /contentunderstanding/defaults`, body `{"modelDeployments": {...}}`). The managed identity needs the **Cognitive Services User** role. Custom analyzer ids may contain only `[a-zA-Z0-9._]` (no hyphens), and the only valid base analyzers are `prebuilt-document`, `prebuilt-image`, `prebuilt-audio`, `prebuilt-video`. All of this is provisioned by Bicep (`infra/modules/ai-services.bicep` deploys the embedding model; `role-assignments.bicep` grants the role).
+
+---
+
+### 🖼️ Image Quality Pre-processing (OpenCV)
+
+To avoid burning tokens on unreadable pages, ARGUS can pre-screen and auto-enhance page images before extraction (powered by `opencv-python-headless`). The flow is **assess → auto-enhance (deskew/denoise/CLAHE/upscale) → re-assess → flag if still bad**.
+
+```bash
+ENABLE_IMAGE_PREPROCESSING=true   # default false
+```
+
+Per-dataset knobs are available via `processing_options`: `enable_preprocessing`, `enable_enhancement`, `skip_if_still_bad` (token-saving; skip hopeless pages), and `quality_thresholds`. Per-page metrics (blur variance, brightness/contrast, effective DPI, skew, `enhanced`, `flagged_low_quality`) are stored on the document under `properties.image_quality`.
+
+---
+
+### 💸 Cost-Effective Summary Model
+
+The **summary** stage (text-only) can be routed to a cheaper model than the main extraction deployment, for cost savings:
+
+```bash
+SUMMARY_MODEL_DEPLOYMENT_NAME=gpt-4.1-mini   # empty = use main deployment
+```
+
+Bicep deploys `gpt-4.1-mini` (Standard SKU) by default (`deploySummaryModel=true`). An optional **Phi-4** serverless deployment is available as a cost experiment (`deployPhiModel=true`, gated off by default — verify regional availability first). The per-call model override lives in `ai_ocr/agents/client.py` (per-deployment client cache).
+
+---
+
+## 🧠 Extraction Controls, Cost Intelligence & Review
+
+ARGUS now includes tiered extraction presets, deterministic rules, per-document cost telemetry, profiling reports, and a human review workflow for flagged documents.
+
+### 🎚️ Extraction Tiers
+
+Choose a tier per dataset with `processing_options.tier`; if omitted, ARGUS uses `DEFAULT_EXTRACTION_TIER` (`standard` by default).
+
+| Tier | Best for | Cost/quality trade-off |
+|------|----------|------------------------|
+| **Economy** | Simple, short, text-readable documents | Lowest cost: OCR + rules-first extraction, no page images, evaluation, or summary by default |
+| **Standard** | Routine production extraction | Balanced cost/quality: OCR + images with rules-first schema reduction |
+| **Premium** | High-value or complex documents | Highest quality: full extraction plus evaluation and summary using the configured premium/default models |
+
+Advanced overrides can be set in the same `processing_options` object when a dataset needs to deviate from the preset:
+
+```json
+{
+  "processing_options": {
+    "tier": "standard",
+    "enable_images": true,
+    "enable_evaluation": false,
+    "enable_summary": false,
+    "extraction_model": "gpt-4.1-mini",
+    "summary_model": "gpt-4.1-mini",
+    "use_rules_engine": true
+  }
+}
+```
+
+The resolved tier is persisted on each document as `properties.tier`.
+
+### 🧭 Dynamic Rules Engine
+
+Rules run after OCR and before the LLM. They can fill schema fields deterministically, shrink the schema passed to the LLM, or skip the LLM entirely when all required fields are confidently filled.
+
+```json
+{
+  "processing_options": {
+    "rules": {
+      "invoice_number": {"type": "regex", "pattern": "invoice_number", "required": true},
+      "vendor_name": {"type": "keyword", "keywords": ["Vendor", "Supplier"]},
+      "total_amount": {"type": "regex", "pattern": "amount"}
+    },
+    "routing_thresholds": {
+      "low_quality_page_fraction": 0.5,
+      "low_quality_min_pages": 1,
+      "min_ocr_text_length": 20,
+      "economy_max_pages": 1
+    }
+  }
+}
+```
+
+Supported extractor types are **regex**, **keyword**, and **positional**. Routing can pre-flag low-quality or unreadable documents, route them to review, skip extraction, or auto-select Economy for small readable documents. Defaults can be tuned with `ROUTING_LOW_QUALITY_PAGE_FRACTION`, `ROUTING_LOW_QUALITY_MIN_PAGES`, `ROUTING_MIN_OCR_TEXT_LENGTH`, and `ROUTING_ECONOMY_MAX_PAGES`.
+
+### 💰 Cost Telemetry
+
+Every processed document receives `properties.cost` with stage-level tokens and USD:
+
+```json
+{
+  "per_stage": [
+    {"stage": "extraction", "model": "gpt-4.1-mini", "input_tokens": 1200, "output_tokens": 240, "usd": 0.0012}
+  ],
+  "total_input_tokens": 1200,
+  "total_output_tokens": 240,
+  "total_usd": 0.0012,
+  "usd_per_page": 0.0006,
+  "pricing_source": "azure_retail",
+  "model_breakdown": {"gpt-4.1-mini": 0.0012}
+}
+```
+
+Pricing is resolved through the Azure Retail Prices API and cached where available. Set `PRICING_USE_RETAIL_API=false` to force the bundled `pricing_fallback.json` prices; mixed/fallback pricing is reflected in `pricing_source`.
+
+### 📊 Cost Profiling
+
+Run sample documents across tiers to compare cost, tokens, success rate, failures, and quality distribution. The backend endpoint persists a Cosmos DB document with `type: "profiling_report"`.
+
+```bash
+# API
+curl -X POST "$BACKEND_URL/api/profiling/run" \
+  -H "Content-Type: application/json" \
+  -d '{"dataset":"default-dataset","tiers":["economy","standard","premium"]}'
+
+# CLI harness from repo root
+uv run --project src\containerapp python scripts\cost_profile.py --dataset default-dataset --tiers economy,standard,premium
+```
+
+Reports return `{per_tier, runs, generated_at}` with `avg_usd_per_page`, `avg_tokens`, `success_rate`, `failure_types`, and `quality_dist` per tier.
+
+### 🚩 Flagged-Document Review & Email (MOCK)
+
+Documents that fail preflight, sanity, routing, or image-quality checks are marked with:
+
+```json
+{
+  "properties": {
+    "flag": {
+      "flagged": true,
+      "reasons": ["low_quality_pages=1/2 (fraction=0.50)"],
+      "stage": "quality",
+      "flagged_at": "2026-06-23T21:31:05Z",
+      "email": {"sent_mock": true}
+    }
+  }
+}
+```
+
+Use the Next.js **Review** screen (`/review`) to list flagged documents, generate an editable email draft, and perform a clearly labeled **MOCK send**. No real email is delivered; the send endpoint only logs the action and persists metadata under `properties.flag.email`.
+
+Endpoints:
+- `GET /api/documents/flagged`
+- `POST /api/documents/{id}/flag-email/generate`
+- `POST /api/flag-email/send` (**MOCK**, no delivery)
+
+Email defaults are configured with `FLAG_EMAIL_FROM` and `FLAG_EMAIL_TO_FALLBACK`. The prompt template is stored in configuration under `flag_email.prompt_template` and defaults to `DEFAULT_FLAG_EMAIL_PROMPT_TEMPLATE`.
+
+---
+
 The Streamlit frontend is **automatically deployed** with `azd up` and provides a user-friendly interface for document management.
 
 > **Note**: ARGUS ships with two frontends: a modern **Next.js** interface (default, deployed as `ca-frontend`) and a legacy **Streamlit** interface. The Next.js frontend is recommended for production use.
@@ -498,8 +667,9 @@ The Streamlit frontend is **automatically deployed** with `azd up` and provides 
 
 | Tab | Functionality |
 |-----|---------------|
-| **🧠 Process Files** | Drag-and-drop document upload with real-time processing status |
-| **🔍 Explore Data** | Browse processed documents, search results, view extraction details |
+| **🧠 Process Files** | Drag-and-drop document upload, tier selection, advanced extraction toggles |
+| **🔍 Explore Data** | Browse processed documents, search results, extraction details, and cost aggregates |
+| **🚩 Review** | Triage flagged documents and mock-send editable re-upload email drafts |
 | **⚙️ Settings** | Configure datasets, adjust processing parameters, manage connections |
 | **📋 Instructions** | Interactive help, API documentation, and usage examples |
 

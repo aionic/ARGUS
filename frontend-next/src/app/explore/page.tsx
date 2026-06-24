@@ -60,7 +60,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { backendClient, Document } from "@/lib/api-client"
+import { backendClient, type Document, type Cost } from "@/lib/api-client"
 import { formatDate, formatDuration, formatBytes } from "@/lib/utils"
 import { DocumentDetailSheet } from "@/components/documents/document-detail-sheet"
 import { AnalyticsCharts } from "@/components/documents/analytics-charts"
@@ -81,7 +81,21 @@ interface ProcessedDocument {
   totalTime?: number
   pages?: number
   size?: number
+  cost?: Cost
+  tier?: string
+  flagged?: boolean
   selected: boolean
+}
+
+function formatUsd(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A"
+  const absValue = Math.abs(value)
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: absValue > 0 && absValue < 1 ? 4 : 2,
+  }).format(value)
 }
 
 function parseDocuments(documents: Document[]): ProcessedDocument[] {
@@ -103,8 +117,15 @@ function parseDocuments(documents: Document[]): ProcessedDocument[] {
 
     // Get state from flattened or nested structure
     const state = doc.state as Record<string, boolean> | undefined || {}
-    const properties = doc.properties as Record<string, unknown> | undefined || {}
-    const extractedData = doc.extracted_data as Record<string, unknown> | undefined || {}
+    const properties = doc.properties as (NonNullable<Document["properties"]> & { tier?: string }) | undefined || {}
+    const processingOptions = doc.processing_options as Record<string, unknown> | undefined
+    const cost = properties.cost
+    const tier = typeof properties.tier === "string"
+      ? properties.tier
+      : typeof processingOptions?.tier === "string"
+        ? processingOptions.tier
+        : undefined
+    const flagged = properties.flag?.flagged === true
 
     const fileLanded = state.file_landed || false
     const ocrCompleted = state.ocr_completed || false
@@ -112,7 +133,7 @@ function parseDocuments(documents: Document[]): ProcessedDocument[] {
     const gptEvaluation = state.gpt_evaluation_completed || false
     const gptSummary = state.gpt_summary_completed || false
     const finished = state.processing_completed || gptSummary || gptEvaluation
-    
+
     // Normalize errors to string (can be string, array, or undefined)
     let errorsStr = ''
     if (typeof doc.errors === 'string') {
@@ -120,7 +141,7 @@ function parseDocuments(documents: Document[]): ProcessedDocument[] {
     } else if (Array.isArray(doc.errors) && doc.errors.length > 0) {
       errorsStr = JSON.stringify(doc.errors)
     }
-    
+
     // Check for actual errors - state.error boolean OR non-empty errors array
     const hasError = state.error === true || (errorsStr.length > 0 && errorsStr !== '[]')
     const errorMessage = hasError ? errorsStr : ""
@@ -146,6 +167,9 @@ function parseDocuments(documents: Document[]): ProcessedDocument[] {
       totalTime: doc.processing_time || properties.total_time_seconds as number,
       pages: doc.num_pages || properties.num_pages as number,
       size: properties.blob_size as number || 0,
+      cost,
+      tier,
+      flagged,
       selected: false,
     }
   })
@@ -189,9 +213,9 @@ export default function ExplorePage() {
   const [datasetFilter, setDatasetFilter] = React.useState<string>("all")
   const [statusFilter, setStatusFilter] = React.useState<string>("all")
   const [searchQuery, setSearchQuery] = React.useState("")
-  
+
   // Sorting
-  type SortField = "fileName" | "dataset" | "status" | "totalTime" | "timestamp" | "pages"
+  type SortField = "fileName" | "dataset" | "status" | "tier" | "totalCost" | "usdPerPage" | "totalTime" | "timestamp" | "pages"
   type SortDirection = "asc" | "desc"
   const [sortField, setSortField] = React.useState<SortField>("timestamp")
   const [sortDirection, setSortDirection] = React.useState<SortDirection>("desc")
@@ -241,7 +265,7 @@ export default function ExplorePage() {
           d.dataset.toLowerCase().includes(query)
       )
     }
-    
+
     // Sort documents
     filtered = filtered.sort((a, b) => {
       let comparison = 0
@@ -254,6 +278,15 @@ export default function ExplorePage() {
           break
         case "status":
           comparison = a.status.localeCompare(b.status)
+          break
+        case "tier":
+          comparison = (a.tier || "").localeCompare(b.tier || "")
+          break
+        case "totalCost":
+          comparison = (a.cost?.total_usd || 0) - (b.cost?.total_usd || 0)
+          break
+        case "usdPerPage":
+          comparison = (a.cost?.usd_per_page || 0) - (b.cost?.usd_per_page || 0)
           break
         case "totalTime":
           comparison = (a.totalTime || 0) - (b.totalTime || 0)
@@ -270,7 +303,7 @@ export default function ExplorePage() {
 
     setFilteredDocuments(filtered)
   }, [documents, datasetFilter, statusFilter, searchQuery, sortField, sortDirection])
-  
+
   // Toggle sort
   function toggleSort(field: SortField) {
     if (sortField === field) {
@@ -280,11 +313,11 @@ export default function ExplorePage() {
       setSortDirection("asc")
     }
   }
-  
+
   // Sort indicator component
   function SortIndicator({ field }: { field: SortField }) {
     if (sortField !== field) return <ArrowUpDown className="h-4 w-4 ml-1 opacity-50" />
-    return sortDirection === "asc" 
+    return sortDirection === "asc"
       ? <ArrowUp className="h-4 w-4 ml-1" />
       : <ArrowDown className="h-4 w-4 ml-1" />
   }
@@ -539,7 +572,7 @@ export default function ExplorePage() {
                             onCheckedChange={selectAll}
                           />
                         </TableHead>
-                        <TableHead 
+                        <TableHead
                           className="cursor-pointer hover:bg-muted/50"
                           onClick={() => toggleSort("fileName")}
                         >
@@ -548,7 +581,7 @@ export default function ExplorePage() {
                             <SortIndicator field="fileName" />
                           </div>
                         </TableHead>
-                        <TableHead 
+                        <TableHead
                           className="cursor-pointer hover:bg-muted/50"
                           onClick={() => toggleSort("dataset")}
                         >
@@ -557,7 +590,16 @@ export default function ExplorePage() {
                             <SortIndicator field="dataset" />
                           </div>
                         </TableHead>
-                        <TableHead 
+                        <TableHead
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => toggleSort("tier")}
+                        >
+                          <div className="flex items-center">
+                            Tier
+                            <SortIndicator field="tier" />
+                          </div>
+                        </TableHead>
+                        <TableHead
                           className="cursor-pointer hover:bg-muted/50"
                           onClick={() => toggleSort("status")}
                         >
@@ -566,11 +608,29 @@ export default function ExplorePage() {
                             <SortIndicator field="status" />
                           </div>
                         </TableHead>
+                        <TableHead
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => toggleSort("totalCost")}
+                        >
+                          <div className="flex items-center">
+                            Total $
+                            <SortIndicator field="totalCost" />
+                          </div>
+                        </TableHead>
+                        <TableHead
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => toggleSort("usdPerPage")}
+                        >
+                          <div className="flex items-center">
+                            $/Page
+                            <SortIndicator field="usdPerPage" />
+                          </div>
+                        </TableHead>
                         <TableHead>OCR</TableHead>
                         <TableHead>GPT</TableHead>
                         <TableHead>Eval</TableHead>
                         <TableHead>Summary</TableHead>
-                        <TableHead 
+                        <TableHead
                           className="cursor-pointer hover:bg-muted/50"
                           onClick={() => toggleSort("totalTime")}
                         >
@@ -579,7 +639,7 @@ export default function ExplorePage() {
                             <SortIndicator field="totalTime" />
                           </div>
                         </TableHead>
-                        <TableHead 
+                        <TableHead
                           className="cursor-pointer hover:bg-muted/50"
                           onClick={() => toggleSort("timestamp")}
                         >
@@ -611,10 +671,23 @@ export default function ExplorePage() {
                             <Badge variant="secondary">{doc.dataset}</Badge>
                           </TableCell>
                           <TableCell>
+                            {doc.tier ? (
+                              <Badge variant="outline" className="capitalize">{doc.tier}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">N/A</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
                             <div className="flex items-center gap-2">
                               <StatusIcon status={doc.status} />
                               <span className="capitalize text-sm">{doc.status}</span>
                             </div>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {formatUsd(doc.cost?.total_usd)}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm text-muted-foreground">
+                            {formatUsd(doc.cost?.usd_per_page)}
                           </TableCell>
                           <TableCell>
                             <StepIndicator completed={doc.ocrCompleted} />
@@ -673,7 +746,7 @@ export default function ExplorePage() {
               if (refreshedDoc) {
                 setSelectedDocument(refreshedDoc)
                 // Also update in the documents list
-                setDocuments(prev => prev.map(d => 
+                setDocuments(prev => prev.map(d =>
                   d.id === refreshedDoc.id ? refreshedDoc : d
                 ))
               }
@@ -690,8 +763,8 @@ export default function ExplorePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Documents</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete {documentsToDelete.length} document(s)? 
-              This will remove them from both Cosmos DB and Blob Storage. 
+              Are you sure you want to delete {documentsToDelete.length} document(s)?
+              This will remove them from both Cosmos DB and Blob Storage.
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

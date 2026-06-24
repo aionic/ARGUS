@@ -20,6 +20,7 @@ import {
 } from "recharts"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { Cost } from "@/lib/api-client"
 
 interface ProcessedDocument {
   id: string
@@ -37,6 +38,9 @@ interface ProcessedDocument {
   totalTime?: number
   pages?: number
   size?: number
+  cost?: Cost
+  tier?: string
+  flagged?: boolean
   selected: boolean
 }
 
@@ -48,9 +52,21 @@ const COLORS = {
   completed: "#22c55e",
   processing: "#eab308",
   failed: "#ef4444",
+  flagged: "#f97316",
 }
 
 const PIE_COLORS = ["#22c55e", "#eab308", "#ef4444"]
+
+function formatUsd(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A"
+  const absValue = Math.abs(value)
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: absValue > 0 && absValue < 1 ? 4 : 2,
+  }).format(value)
+}
 
 export function AnalyticsCharts({ documents }: AnalyticsChartsProps) {
   // Status distribution
@@ -121,25 +137,104 @@ export function AnalyticsCharts({ documents }: AnalyticsChartsProps) {
       }))
   }, [documents])
 
+  const costDocuments = React.useMemo(() => {
+    return documents.filter((doc) => doc.cost)
+  }, [documents])
+
+  const costByTierData = React.useMemo(() => {
+    const byTier: Record<string, { name: string; totalCost: number; avgPerPage: number; count: number; pages: number }> = {}
+    costDocuments.forEach((doc) => {
+      const tier = doc.tier || "unknown"
+      if (!byTier[tier]) {
+        byTier[tier] = { name: tier, totalCost: 0, avgPerPage: 0, count: 0, pages: 0 }
+      }
+      byTier[tier].totalCost += doc.cost?.total_usd || 0
+      byTier[tier].pages += doc.pages || 0
+      byTier[tier].count++
+    })
+    return Object.values(byTier).map((tier) => ({
+      ...tier,
+      avgPerPage: tier.pages > 0 ? tier.totalCost / tier.pages : 0,
+    }))
+  }, [costDocuments])
+
+  const costByDatasetData = React.useMemo(() => {
+    const byDataset: Record<string, { name: string; totalCost: number; avgPerPage: number; count: number; pages: number }> = {}
+    costDocuments.forEach((doc) => {
+      if (!byDataset[doc.dataset]) {
+        byDataset[doc.dataset] = { name: doc.dataset, totalCost: 0, avgPerPage: 0, count: 0, pages: 0 }
+      }
+      byDataset[doc.dataset].totalCost += doc.cost?.total_usd || 0
+      byDataset[doc.dataset].pages += doc.pages || 0
+      byDataset[doc.dataset].count++
+    })
+    return Object.values(byDataset)
+      .map((dataset) => ({
+        ...dataset,
+        avgPerPage: dataset.pages > 0 ? dataset.totalCost / dataset.pages : 0,
+      }))
+      .sort((a, b) => b.totalCost - a.totalCost)
+  }, [costDocuments])
+
+  const costTimelineData = React.useMemo(() => {
+    const byDate: Record<string, { date: string; totalCost: number; documents: number }> = {}
+    costDocuments.forEach((doc) => {
+      const dateStr = doc.timestamp.toISOString().split("T")[0]
+      if (!byDate[dateStr]) {
+        byDate[dateStr] = { date: dateStr, totalCost: 0, documents: 0 }
+      }
+      byDate[dateStr].totalCost += doc.cost?.total_usd || 0
+      byDate[dateStr].documents++
+    })
+    return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date))
+  }, [costDocuments])
+
+  const failureFlaggedData = React.useMemo(() => {
+    const byDataset: Record<string, { name: string; total: number; failed: number; flagged: number }> = {}
+    documents.forEach((doc) => {
+      if (!byDataset[doc.dataset]) {
+        byDataset[doc.dataset] = { name: doc.dataset, total: 0, failed: 0, flagged: 0 }
+      }
+      byDataset[doc.dataset].total++
+      if (doc.status === "failed") byDataset[doc.dataset].failed++
+      if (doc.flagged) byDataset[doc.dataset].flagged++
+    })
+    return Object.values(byDataset).map((dataset) => ({
+      name: dataset.name,
+      failureRate: dataset.total > 0 ? (dataset.failed / dataset.total) * 100 : 0,
+      flaggedRate: dataset.total > 0 ? (dataset.flagged / dataset.total) * 100 : 0,
+      failed: dataset.failed,
+      flagged: dataset.flagged,
+      total: dataset.total,
+    }))
+  }, [documents])
+
   // Stats summary
   const stats = React.useMemo(() => {
     const completedDocs = documents.filter((d) => d.status === "completed")
     const timesWithValues = completedDocs.filter((d) => d.totalTime).map((d) => d.totalTime!)
-    const avgTime = timesWithValues.length > 0 
-      ? timesWithValues.reduce((a, b) => a + b, 0) / timesWithValues.length 
+    const avgTime = timesWithValues.length > 0
+      ? timesWithValues.reduce((a, b) => a + b, 0) / timesWithValues.length
       : 0
     const totalPages = documents.reduce((sum, d) => sum + (d.pages || 0), 0)
-    const successRate = documents.length > 0 
-      ? (completedDocs.length / documents.length) * 100 
+    const successRate = documents.length > 0
+      ? (completedDocs.length / documents.length) * 100
       : 0
+    const totalCost = costDocuments.reduce((sum, doc) => sum + (doc.cost?.total_usd || 0), 0)
+    const costPages = costDocuments.reduce((sum, doc) => sum + (doc.pages || 0), 0)
+    const flaggedDocs = documents.filter((doc) => doc.flagged).length
 
     return {
       totalDocs: documents.length,
       avgTime: avgTime.toFixed(1),
       totalPages,
       successRate: successRate.toFixed(1),
+      totalCost,
+      avgCostPerPage: costPages > 0 ? totalCost / costPages : 0,
+      costDocumentCount: costDocuments.length,
+      flaggedDocs,
     }
-  }, [documents])
+  }, [documents, costDocuments])
 
   if (documents.length === 0) {
     return (
@@ -173,18 +268,24 @@ export function AnalyticsCharts({ documents }: AnalyticsChartsProps) {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Pages</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalPages}</div>
+            <div className="text-2xl font-bold">{formatUsd(stats.totalCost)}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.costDocumentCount} docs with cost data
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
+            <CardTitle className="text-sm font-medium">Avg Cost/Page</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.successRate}%</div>
+            <div className="text-2xl font-bold">{formatUsd(stats.avgCostPerPage)}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.flaggedDocs} flagged • {stats.successRate}% success
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -196,6 +297,7 @@ export function AnalyticsCharts({ documents }: AnalyticsChartsProps) {
           <TabsTrigger value="datasets">By Dataset</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="costs">Costs</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -219,7 +321,7 @@ export function AnalyticsCharts({ documents }: AnalyticsChartsProps) {
                         fill="#8884d8"
                         dataKey="value"
                         label={({ name, value, percent }) =>
-                          `${name}: ${value} (${(percent * 100).toFixed(0)}%)`
+                          `${name}: ${value} (${((percent || 0) * 100).toFixed(0)}%)`
                         }
                       >
                         {statusData.map((entry, index) => (
@@ -359,6 +461,123 @@ export function AnalyticsCharts({ documents }: AnalyticsChartsProps) {
                       name="Failed"
                     />
                   </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="costs" className="space-y-4">
+          {costDocuments.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                Cost data not available for the current document set
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Cost by Tier</CardTitle>
+                    <CardDescription>Total cost and average cost/page by processing tier</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[320px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={costByTierData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis tickFormatter={(value: number) => formatUsd(value)} />
+                          <Tooltip
+                            formatter={(value: number, name: string) => [
+                              formatUsd(value),
+                              name === "totalCost" ? "Total Cost" : "Avg Cost/Page",
+                            ]}
+                          />
+                          <Legend />
+                          <Bar dataKey="totalCost" fill="#8b5cf6" name="Total Cost" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="avgPerPage" fill="#06b6d4" name="Avg Cost/Page" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Cost by Dataset</CardTitle>
+                    <CardDescription>Total cost by dataset</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[320px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={costByDatasetData} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis type="number" tickFormatter={(value: number) => formatUsd(value)} />
+                          <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11 }} />
+                          <Tooltip
+                            formatter={(value: number, name: string) => [
+                              formatUsd(value),
+                              name === "totalCost" ? "Total Cost" : "Avg Cost/Page",
+                            ]}
+                          />
+                          <Legend />
+                          <Bar dataKey="totalCost" fill="#8b5cf6" name="Total Cost" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Cost Over Time</CardTitle>
+                    <CardDescription>Daily processing cost from loaded documents</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[320px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={costTimelineData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" />
+                          <YAxis tickFormatter={(value: number) => formatUsd(value)} />
+                          <Tooltip formatter={(value: number) => [formatUsd(value), "Total Cost"]} />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="totalCost"
+                            stroke="#8b5cf6"
+                            strokeWidth={2}
+                            name="Total Cost"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
+          <Card>
+            <CardHeader>
+              <CardTitle>Failure & Flagged Rate</CardTitle>
+              <CardDescription>Percent failed or flagged by dataset</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={failureFlaggedData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis unit="%" />
+                    <Tooltip formatter={(value: number) => [`${value.toFixed(1)}%`, "Rate"]} />
+                    <Legend />
+                    <Bar dataKey="failureRate" fill={COLORS.failed} name="Failure Rate" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="flaggedRate" fill={COLORS.flagged} name="Flagged Rate" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>

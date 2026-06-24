@@ -463,12 +463,21 @@ def convert_pdf_into_image(pdf_path):
         raise e
 
 
+def _count_pages_for_cost(file_path: str) -> int:
+    if file_path.lower().endswith(".pdf"):
+        try:
+            return len(PdfReader(file_path).pages)
+        except Exception:  # noqa: BLE001 - cost telemetry must not break processing
+            logging.warning(f"Unable to count pages for OCR cost: {file_path}")
+    return 1
+
+
 def run_ocr_processing(
     file_to_ocr: str, document: dict, container: any, conf_container: any = None, update_state: bool = True
-) -> tuple[str, float]:
+) -> tuple[str, float, int]:
     """
     Run OCR processing on the input file using the configured OCR provider.
-    Returns OCR result and processing time.
+    Returns OCR result, processing time, and page count for costing.
     """
     ocr_start_time = datetime.now()
     try:
@@ -486,12 +495,13 @@ def run_ocr_processing(
             raise ValueError(f"Unknown OCR provider: {ocr_provider}. Supported providers: 'azure', 'mistral'")
 
         # Don't update document's ocr_output here for chunks - let caller handle merging
+        page_count = _count_pages_for_cost(file_to_ocr)
         ocr_processing_time = (datetime.now() - ocr_start_time).total_seconds()
         if update_state:
             document["extracted_data"]["ocr_output"] = ocr_result
             document["properties"]["ocr_provider_used"] = ocr_provider
             update_state(document, container, "ocr_completed", True, ocr_processing_time)
-        return ocr_result, ocr_processing_time
+        return ocr_result, ocr_processing_time, page_count
     except Exception as e:
         document["errors"].append(f"OCR processing error: {str(e)}")
         if update_state:
@@ -508,10 +518,11 @@ def run_gpt_extraction(
     container: any,
     conf_container: any = None,
     update_state: bool = True,
-) -> tuple[dict, float]:
+    model: str | None = None,
+) -> tuple[dict, float, dict]:
     """
     Run GPT extraction on OCR results.
-    Returns extracted data and processing time.
+    Returns extracted data, processing time, and token usage.
     """
     gpt_extraction_start_time = datetime.now()
     try:
@@ -522,7 +533,8 @@ def run_gpt_extraction(
         logging.info(f"  - OCR text preview: {ocr_result[:200]}..." if ocr_result else "  - OCR text: EMPTY")
         logging.info(f"  - Images provided: {len(imgs) > 0}")
 
-        structured = get_structured_data(ocr_result, prompt, json_schema, imgs, None)
+        structured = get_structured_data(ocr_result, prompt, json_schema, imgs, None, model=model)
+        usage = structured.usage
 
         # Debug the structured response
         logging.info(f"GPT Response length: {len(structured.content)} characters")
@@ -589,13 +601,13 @@ def run_gpt_extraction(
             # Return a structured error instead of raising
             if update_state:
                 update_state(document, container, "gpt_extraction_completed", False)
-            return {"error": error_msg, "error_type": error_type}, 0.0
+            return {"error": error_msg, "error_type": error_type}, 0.0, usage
 
         gpt_extraction_time = (datetime.now() - gpt_extraction_start_time).total_seconds()
         if update_state:
             document["extracted_data"]["gpt_extraction_output"] = extracted_data
             update_state(document, container, "gpt_extraction_completed", True, gpt_extraction_time)
-        return extracted_data, gpt_extraction_time
+        return extracted_data, gpt_extraction_time, usage
     except Exception as e:
         logging.error(f"GPT extraction error: {str(e)}")
         logging.error(f"Exception type: {type(e).__name__}")
@@ -616,19 +628,22 @@ def run_gpt_evaluation(
     container: any,
     conf_container: any = None,
     update_state: bool = True,
-) -> tuple[dict, float]:
+    model: str | None = None,
+) -> tuple[dict, float, dict]:
     """
     Run GPT evaluation and enrichment on extracted data.
-    Returns enriched data and processing time.
+    Returns enriched data, processing time, and token usage.
     """
     evaluation_start_time = datetime.now()
     try:
-        enriched_data = perform_gpt_evaluation_and_enrichment(imgs, extracted_data, json_schema, None)
+        enriched_data, usage = perform_gpt_evaluation_and_enrichment(
+            imgs, extracted_data, json_schema, None, model=model
+        )
         evaluation_time = (datetime.now() - evaluation_start_time).total_seconds()
         if update_state:
             document["extracted_data"]["gpt_extraction_output_with_evaluation"] = enriched_data
             update_state(document, container, "gpt_evaluation_completed", True, evaluation_time)
-        return enriched_data, evaluation_time
+        return enriched_data, evaluation_time, usage
     except Exception as e:
         document["errors"].append(f"GPT evaluation error: {str(e)}")
         if update_state:
@@ -637,16 +652,22 @@ def run_gpt_evaluation(
 
 
 def run_gpt_summary(
-    ocr_result: str, document: dict, container: any, conf_container: any = None, update_state: bool = True
-) -> tuple[dict, float]:
+    ocr_result: str,
+    document: dict,
+    container: any,
+    conf_container: any = None,
+    update_state: bool = True,
+    model: str | None = None,
+) -> tuple[dict, float, dict]:
     """
     Run GPT summary on OCR results.
-    Returns summary data and processing time.
+    Returns summary data, processing time, and token usage.
     """
     summary_start_time = datetime.now()
     try:
         classification = getattr(ocr_result, "categorization", "N/A")
-        gpt_summary = get_summary_with_gpt(ocr_result, None)
+        gpt_summary = get_summary_with_gpt(ocr_result, None, model=model)
+        usage = gpt_summary.usage
 
         summary_data = {"classification": classification, "gpt_summary_output": gpt_summary.content}
 
@@ -655,7 +676,7 @@ def run_gpt_summary(
             document["extracted_data"]["classification"] = classification
             document["extracted_data"]["gpt_summary_output"] = gpt_summary.content
             update_state(document, container, "gpt_summary_completed", True, summary_processing_time)
-        return summary_data, summary_processing_time
+        return summary_data, summary_processing_time, usage
     except Exception as e:
         document["errors"].append(f"Summary processing error: {str(e)}")
         if update_state:

@@ -7,11 +7,10 @@ import copy
 import json
 import logging
 import os
-
-# Import processing functions
 import sys
 import traceback
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 from typing import Annotated, Any, Dict
 
 from azure.identity import DefaultAzureCredential
@@ -26,12 +25,247 @@ from dependencies import (
     set_global_processing_semaphore,
 )
 from models import EventGridEvent
+from profiling import run_cost_profile
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "functionapp"))
 from ai_ocr.agents import assistant_message, run_chat, text_content, user_message
 from ai_ocr.process import connect_to_cosmos, fetch_model_prompt_and_schema
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_FLAG_EMAIL_PROMPT_TEMPLATE = """You are drafting a courteous email to the original uploader of a document that ARGUS flagged for review.
+
+Document context:
+- Document ID: {document_id}
+- Dataset: {dataset}
+- Filename: {filename}
+- Flag stage: {stage}
+- Flagged at: {flagged_at}
+- Flag reasons:
+{reasons_text}
+- Image quality summary: {image_quality_summary}
+- Image quality metrics:
+{quality_metrics}
+
+Write a concise, professional email that explains why the document was flagged and proposes concrete next steps:
+1. Re-scan at a higher DPI.
+2. Ensure good lighting and a flat page.
+3. Re-upload the corrected document.
+
+Return only JSON with string fields "subject" and "body"."""
+DEFAULT_FLAG_EMAIL_FROM = "noreply@argus.example"
+DEFAULT_FLAG_EMAIL_TO_FALLBACK = "uploader@argus.example"
+
+
+class _SafeFormatDict(dict):
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def _default_flag_email_config() -> dict:
+    return {
+        "prompt_template": DEFAULT_FLAG_EMAIL_PROMPT_TEMPLATE,
+        "from": os.getenv("FLAG_EMAIL_FROM", DEFAULT_FLAG_EMAIL_FROM),
+        "to_fallback": os.getenv("FLAG_EMAIL_TO_FALLBACK", DEFAULT_FLAG_EMAIL_TO_FALLBACK),
+    }
+
+
+def _apply_flag_email_defaults(config: dict) -> dict:
+    config_with_defaults = copy.deepcopy(config)
+    flag_email = config_with_defaults.get("flag_email")
+    if not isinstance(flag_email, dict):
+        flag_email = {}
+
+    for key, value in _default_flag_email_config().items():
+        if not flag_email.get(key):
+            flag_email[key] = value
+
+    config_with_defaults["flag_email"] = flag_email
+    return config_with_defaults
+
+
+def _get_flag_email_config() -> dict:
+    conf_container = get_conf_container()
+    if not conf_container:
+        return _default_flag_email_config()
+
+    try:
+        config_item = conf_container.read_item(item="configuration", partition_key="configuration")
+        return _apply_flag_email_defaults(config_item)["flag_email"]
+    except Exception as e:
+        logger.warning("Could not read flag email configuration, using defaults: %s", e)
+        return _default_flag_email_config()
+
+
+def _get_document_by_id(data_container, document_id: str) -> dict:
+    items = list(
+        data_container.query_items(
+            query="SELECT * FROM c WHERE c.id = @document_id",
+            parameters=[{"name": "@document_id", "value": document_id}],
+            enable_cross_partition_query=True,
+        )
+    )
+    if not items:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return items[0]
+
+
+def _get_document_dataset(document: dict) -> str:
+    document_id = document.get("id", "")
+    if document.get("dataset"):
+        return document["dataset"]
+    if "__" in document_id:
+        return document_id.split("__", 1)[0]
+    return "default-dataset"
+
+
+def _get_document_filename(document: dict) -> str:
+    properties = document.get("properties") or {}
+    document_id = document.get("id", "")
+    filename = (
+        document.get("file_name")
+        or document.get("filename")
+        or properties.get("file_name")
+        or properties.get("filename")
+    )
+    if filename:
+        return filename
+    if "__" in document_id:
+        return document_id.split("__", 1)[1]
+    return document_id
+
+
+def _as_reason_list(reasons: Any) -> list[str]:
+    if isinstance(reasons, list):
+        return [str(reason) for reason in reasons if str(reason).strip()]
+    if reasons:
+        return [str(reasons)]
+    return []
+
+
+def _summarize_image_quality(image_quality: Any) -> str | None:
+    if not image_quality:
+        return None
+    if isinstance(image_quality, str):
+        return image_quality
+    if not isinstance(image_quality, dict):
+        return json.dumps(image_quality, default=str)
+
+    issues = image_quality.get("issues")
+    if isinstance(issues, list) and issues:
+        return "; ".join(str(issue) for issue in issues)
+
+    summary_parts = []
+    for key in ("summary", "overall", "status", "dpi", "resolution", "blur_score", "brightness", "contrast"):
+        value = image_quality.get(key)
+        if value not in (None, "", []):
+            summary_parts.append(f"{key}: {value}")
+    return "; ".join(summary_parts) if summary_parts else json.dumps(image_quality, default=str)
+
+
+def _document_is_flagged(document: dict) -> bool:
+    flag = (document.get("properties") or {}).get("flag") or {}
+    return flag.get("flagged") is True
+
+
+def _build_flag_email_context(document: dict) -> dict:
+    properties = document.get("properties") or {}
+    flag = properties.get("flag") or {}
+    reasons = _as_reason_list(flag.get("reasons"))
+    image_quality = properties.get("image_quality")
+    image_quality_summary = _summarize_image_quality(image_quality) or "No image-quality metrics recorded."
+
+    return {
+        "document_id": document.get("id", ""),
+        "dataset": _get_document_dataset(document),
+        "filename": _get_document_filename(document),
+        "stage": flag.get("stage", ""),
+        "flagged_at": flag.get("flagged_at", ""),
+        "reasons": ", ".join(reasons) if reasons else "No reasons recorded.",
+        "reasons_text": "\n".join(f"- {reason}" for reason in reasons) if reasons else "- No reasons recorded.",
+        "image_quality_summary": image_quality_summary,
+        "quality_metrics": json.dumps(image_quality or {}, indent=2, default=str),
+    }
+
+
+def _render_flag_email_template(template: str, document: dict) -> str:
+    context = _build_flag_email_context(document)
+    try:
+        rendered_template = template.format_map(_SafeFormatDict(context))
+    except ValueError:
+        logger.warning("Flag email prompt template contains invalid format placeholders; appending context instead")
+        rendered_template = template
+
+    return f"{rendered_template}\n\nResolved document context:\n{json.dumps(context, indent=2, default=str)}"
+
+
+def _extract_json_object(text: str) -> dict | None:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.removeprefix("```json").removeprefix("```").strip()
+        cleaned = cleaned.removesuffix("```").strip()
+
+    try:
+        parsed = json.loads(cleaned)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                parsed = json.loads(cleaned[start : end + 1])
+                return parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
+def _fallback_email_body(document: dict) -> str:
+    context = _build_flag_email_context(document)
+    return (
+        "Hello,\n\n"
+        f'ARGUS flagged the document "{context["filename"]}" for review.\n\n'
+        f"Reasons:\n{context['reasons_text']}\n\n"
+        f"Image quality notes: {context['image_quality_summary']}\n\n"
+        "Please re-scan the document at a higher DPI, ensure the page is flat with good lighting, "
+        "and re-upload the corrected file.\n\n"
+        "Thank you."
+    )
+
+
+def _parse_email_draft(text: str, document: dict) -> dict:
+    parsed = _extract_json_object(text)
+    if parsed:
+        subject = str(parsed.get("subject") or "").strip()
+        body = str(parsed.get("body") or "").strip()
+        if subject and body:
+            return {"subject": subject, "body": body}
+
+    filename = _get_document_filename(document)
+    return {
+        "subject": f"Action needed: re-upload flagged document {filename}",
+        "body": text.strip() or _fallback_email_body(document),
+    }
+
+
+def _get_uploader_email(document: dict) -> str | None:
+    properties = document.get("properties") or {}
+    candidates = [
+        document.get("uploader_email"),
+        document.get("uploaded_by_email"),
+        document.get("created_by_email"),
+        properties.get("uploader_email"),
+        properties.get("uploaded_by_email"),
+        properties.get("created_by_email"),
+    ]
+    uploader = properties.get("uploader")
+    if isinstance(uploader, dict):
+        candidates.append(uploader.get("email"))
+
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
 
 
 async def root():
@@ -135,11 +369,24 @@ async def get_configuration():
             config_item = conf_container.read_item(item="configuration", partition_key="configuration")
             # Remove Cosmos DB specific fields
             clean_config = {k: v for k, v in config_item.items() if not k.startswith("_")}
-            return clean_config
+            config_with_defaults = _apply_flag_email_defaults(clean_config)
+            if clean_config.get("flag_email") != config_with_defaults.get("flag_email"):
+                try:
+                    conf_container.upsert_item(config_with_defaults)
+                except Exception as upsert_error:
+                    logger.warning("Could not persist default flag email configuration: %s", upsert_error)
+            return config_with_defaults
         except Exception as e:
             logger.warning(f"Configuration item not found, returning default: {e}")
             # Return default configuration structure
-            return {"id": "configuration", "partitionKey": "configuration", "datasets": {}}
+            default_config = _apply_flag_email_defaults(
+                {"id": "configuration", "partitionKey": "configuration", "datasets": {}}
+            )
+            try:
+                conf_container.upsert_item(default_config)
+            except Exception as upsert_error:
+                logger.warning("Could not persist default configuration: %s", upsert_error)
+            return default_config
 
     except Exception as e:
         logger.error(f"Error fetching configuration: {e}")
@@ -160,6 +407,7 @@ async def update_configuration(request: Request):
             config_data["id"] = "configuration"
         if "partitionKey" not in config_data:
             config_data["partitionKey"] = "configuration"
+        config_data = _apply_flag_email_defaults(config_data)
 
         # Upsert the single configuration item
         conf_container.upsert_item(config_data)
@@ -376,6 +624,48 @@ async def process_file(request: Request, background_tasks: BackgroundTasks):
         logger.error(f"Error in process-file endpoint: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+async def run_profiling(request: Request):
+    """Run the cost profiling harness across demo documents and tiers."""
+    try:
+        try:
+            request_body = await request.json()
+        except Exception:
+            request_body = {}
+        if not isinstance(request_body, dict):
+            raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+
+        dataset = request_body.get("dataset") or "default-dataset"
+        files = request_body.get("files")
+        tiers = request_body.get("tiers")
+        if files is not None and not isinstance(files, list):
+            raise HTTPException(status_code=400, detail="files must be a list of file names")
+        if tiers is not None and not isinstance(tiers, list):
+            raise HTTPException(status_code=400, detail="tiers must be a list of tier names")
+
+        data_container = get_data_container()
+        if not data_container:
+            raise HTTPException(status_code=503, detail="Data container not available")
+
+        return await asyncio.to_thread(
+            run_cost_profile,
+            dataset=dataset,
+            files=files,
+            tiers=tiers,
+            data_container=data_container,
+            persist=True,
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Error running profiling harness: %s", e)
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Profiling run failed")
 
 
 async def get_openai_settings():
@@ -1200,6 +1490,170 @@ async def list_documents(dataset: str = None):
     except Exception as e:
         logger.error(f"Error listing documents: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
+
+
+async def list_flagged_documents():
+    """List lightweight document records where properties.flag.flagged is true."""
+    try:
+        data_container = get_data_container()
+        if not data_container:
+            raise HTTPException(status_code=503, detail="Data container not available")
+
+        query = """
+            SELECT c.id, c.dataset, c.file_name, c.filename, c.properties
+            FROM c
+            WHERE IS_DEFINED(c.properties.flag.flagged) AND c.properties.flag.flagged = true
+        """
+        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+
+        flagged_documents = []
+        for item in items:
+            properties = item.get("properties") or {}
+            flag = properties.get("flag") or {}
+            image_quality_summary = _summarize_image_quality(properties.get("image_quality"))
+            email = flag.get("email") if isinstance(flag.get("email"), dict) else None
+
+            flagged_item = {
+                "id": item.get("id"),
+                "dataset": _get_document_dataset(item),
+                "filename": _get_document_filename(item),
+                "reasons": _as_reason_list(flag.get("reasons")),
+                "stage": flag.get("stage"),
+                "flagged_at": flag.get("flagged_at"),
+                "email_sent": bool(email and email.get("sent_mock")),
+            }
+            if image_quality_summary:
+                flagged_item["image_quality_summary"] = image_quality_summary
+            flagged_documents.append(flagged_item)
+
+        return flagged_documents
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error listing flagged documents: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to list flagged documents: {str(e)}")
+
+
+async def generate_flag_email(document_id: str, request: Request):
+    """Generate a flagged-document email draft using the configured prompt template."""
+    try:
+        data_container = get_data_container()
+        if not data_container:
+            raise HTTPException(status_code=503, detail="Data container not available")
+
+        try:
+            request_body = await request.json()
+        except Exception:
+            request_body = {}
+
+        if request_body is None:
+            request_body = {}
+        if not isinstance(request_body, dict):
+            raise HTTPException(status_code=400, detail="Request body must be an object")
+
+        prompt_template = request_body.get("prompt_template")
+        if prompt_template is not None and not isinstance(prompt_template, str):
+            raise HTTPException(status_code=400, detail="prompt_template must be a string")
+
+        document = _get_document_by_id(data_container, document_id)
+        if not _document_is_flagged(document):
+            raise HTTPException(status_code=400, detail="Document is not flagged")
+
+        flag_email_config = _get_flag_email_config()
+        template = (
+            prompt_template or flag_email_config.get("prompt_template") or DEFAULT_FLAG_EMAIL_PROMPT_TEMPLATE
+        ).strip()
+        instructions = (
+            f"{_render_flag_email_template(template, document)}\n\n"
+            'Return only JSON with string fields "subject" and "body".'
+        )
+
+        result = await run_chat(
+            [user_message([text_content("Draft the flagged-document email now.")])],
+            instructions=instructions,
+            temperature=0.2,
+            max_tokens=900,
+        )
+
+        return _parse_email_draft(result.text, document)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error generating flag email for document %s: %s", document_id, e)
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to generate flag email: {str(e)}")
+
+
+async def send_flag_email(request: Request):
+    """Mock-send a flagged-document email and persist the send metadata."""
+    try:
+        data_container = get_data_container()
+        if not data_container:
+            raise HTTPException(status_code=503, detail="Data container not available")
+
+        try:
+            request_body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Request body must be valid JSON")
+
+        if not isinstance(request_body, dict):
+            raise HTTPException(status_code=400, detail="Request body must be an object")
+
+        document_id = str(request_body.get("document_id") or "").strip()
+        subject = str(request_body.get("subject") or "").strip()
+        body = str(request_body.get("body") or "").strip()
+        missing_fields = [
+            field for field, value in (("document_id", document_id), ("subject", subject), ("body", body)) if not value
+        ]
+        if missing_fields:
+            raise HTTPException(status_code=400, detail=f"Missing required fields: {', '.join(missing_fields)}")
+
+        document = _get_document_by_id(data_container, document_id)
+        if not _document_is_flagged(document):
+            raise HTTPException(status_code=400, detail="Document is not flagged")
+
+        flag_email_config = _get_flag_email_config()
+        to_address = str(request_body.get("to") or "").strip()
+        if not to_address:
+            to_address = (
+                _get_uploader_email(document) or flag_email_config.get("to_fallback") or DEFAULT_FLAG_EMAIL_TO_FALLBACK
+            )
+
+        message_id = f"mock-{uuid.uuid4()}"
+        sent_at = datetime.now(timezone.utc).isoformat()
+
+        logger.info(
+            "[MOCK EMAIL] would send from %s to %s for document %s with subject %r (message_id=%s)",
+            flag_email_config.get("from") or DEFAULT_FLAG_EMAIL_FROM,
+            to_address,
+            document_id,
+            subject,
+            message_id,
+        )
+
+        # MOCK EMAIL: replace this block with a real provider integration when email delivery is enabled.
+        properties = document.setdefault("properties", {})
+        flag = properties.setdefault("flag", {})
+        flag["email"] = {
+            "sent_mock": True,
+            "to": to_address,
+            "subject": subject,
+            "body": body,
+            "sent_at": sent_at,
+            "message_id": message_id,
+        }
+        data_container.upsert_item(document)
+
+        return {"success": True, "message_id": message_id, "mock": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error mock-sending flag email: %s", e)
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to mock-send flag email: {str(e)}")
 
 
 def _get_document_status(item: dict) -> str:

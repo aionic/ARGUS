@@ -34,6 +34,10 @@ class ChatResult:
     value: Any = None
     finish_reason: Optional[str] = None
     tool_calls: list = field(default_factory=list)
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    model: Optional[str] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -198,6 +202,55 @@ def _extract_finish_reason(response: Any) -> Optional[str]:
     return None
 
 
+def _usage_value(source: Any, *names: str) -> Optional[int]:
+    """Read a usage value from dict-like or attribute-based provider shapes."""
+    for name in names:
+        try:
+            value = source.get(name) if isinstance(source, dict) else getattr(source, name, None)
+            if value is not None:
+                return int(value)
+        except Exception:  # noqa: BLE001 - diagnostics only
+            continue
+    return None
+
+
+def _extract_usage(response: Any) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    """Best-effort token usage extraction from Agent Framework/OpenAI responses."""
+    try:
+        usage_details = getattr(response, "usage_details", None)
+        if usage_details:
+            return (
+                _usage_value(usage_details, "input_token_count"),
+                _usage_value(usage_details, "output_token_count"),
+                _usage_value(usage_details, "total_token_count"),
+            )
+    except Exception:  # noqa: BLE001 - diagnostics only
+        pass
+
+    try:
+        candidates = [response]
+        raw = getattr(response, "raw_representation", None)
+        if raw is not None:
+            candidates.append(raw)
+            nested_raw = getattr(raw, "raw_representation", None)
+            if nested_raw is not None:
+                candidates.append(nested_raw)
+
+        for candidate in candidates:
+            usage = getattr(candidate, "usage", None)
+            if not usage:
+                continue
+            return (
+                _usage_value(usage, "prompt_tokens", "input_tokens", "input_token_count"),
+                _usage_value(usage, "completion_tokens", "output_tokens", "output_token_count"),
+                _usage_value(usage, "total_tokens", "total_token_count"),
+            )
+    except Exception:  # noqa: BLE001 - diagnostics only
+        pass
+
+    return None, None, None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Core run
 # ─────────────────────────────────────────────────────────────────────────────
@@ -212,7 +265,8 @@ async def _arun_chat(
     max_tokens: Optional[int],
     model: Optional[str] = None,
 ) -> ChatResult:
-    client = await _get_client(model)
+    resolved_model = model or os.getenv("AZURE_OPENAI_MODEL_DEPLOYMENT_NAME")
+    client = await _get_client(resolved_model)
     agent = Agent(client=client, instructions=instructions, tools=tools)
 
     opts: dict[str, Any] = {}
@@ -227,11 +281,16 @@ async def _arun_chat(
     options = ChatOptions(**opts) if opts else None
 
     response = await agent.run(list(messages), options=options)
+    input_tokens, output_tokens, total_tokens = _extract_usage(response)
     return ChatResult(
         text=response.text or "",
         value=getattr(response, "value", None),
         finish_reason=_extract_finish_reason(response),
         tool_calls=_extract_tool_calls(response),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        model=resolved_model,
     )
 
 

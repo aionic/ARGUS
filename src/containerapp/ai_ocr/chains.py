@@ -10,8 +10,18 @@ from ai_ocr.azure.config import get_config
 class _Message:
     """Lightweight stand-in for the OpenAI message object (exposes `.content`)."""
 
-    def __init__(self, content: str):
+    def __init__(self, content: str, usage: dict[str, Any] | None = None):
         self.content = content
+        self.usage = usage or {}
+
+
+def _usage_from_chat_result(result: Any) -> dict[str, Any]:
+    return {
+        "input_tokens": int(result.input_tokens or 0),
+        "output_tokens": int(result.output_tokens or 0),
+        "total_tokens": int(result.total_tokens or 0),
+        "model": result.model,
+    }
 
 
 def clean_json_response(raw_content: str) -> str:
@@ -102,7 +112,12 @@ def clean_json_response(raw_content: str) -> str:
 
 
 def get_structured_data(
-    markdown_content: str, prompt: str, json_schema: str, images: List[str] = [], cosmos_config_container=None
+    markdown_content: str,
+    prompt: str,
+    json_schema: str,
+    images: List[str] = [],
+    cosmos_config_container=None,
+    model: str | None = None,
 ) -> Any:
     config = get_config(cosmos_config_container)
 
@@ -206,10 +221,11 @@ def get_structured_data(
     logging.info(f"  - Has images: {has_images}")
     logging.info(f"  - Content part count: {len(contents)}")
     logging.info(f"  - Custom prompt: {prompt}")
-    logging.info(f"  - Model: {config['openai_model_deployment']}")
+    logging.info(f"  - Model: {model or config['openai_model_deployment']}")
 
     try:
-        result = run_chat_sync(messages, instructions=system_content)
+        result = run_chat_sync(messages, instructions=system_content, model=model)
+        usage = _usage_from_chat_result(result)
 
         raw_content = result.text
         finish_reason = result.finish_reason
@@ -235,13 +251,13 @@ def get_structured_data(
                 ],
                 "technical_details": {"response_length": len(raw_content), "truncated": True},
             }
-            return _Message(json.dumps(error_response))
+            return _Message(json.dumps(error_response), usage)
 
         # Try to parse as JSON to validate
         try:
             json.loads(raw_content)
             logging.info("GPT response successfully parsed as JSON")
-            return _Message(raw_content)
+            return _Message(raw_content, usage)
         except json.JSONDecodeError as json_error:
             logging.error(f"GPT returned invalid JSON: {json_error}")
             logging.error(f"Raw content: {raw_content}")
@@ -280,7 +296,7 @@ def get_structured_data(
                         "likely_truncated": True,
                     },
                 }
-                return _Message(json.dumps(error_response))
+                return _Message(json.dumps(error_response), usage)
 
             # Multiple fallback strategies for JSON cleaning
             cleanup_strategies = [
@@ -297,7 +313,7 @@ def get_structured_data(
                         json.loads(cleaned_content)  # Validate it parses
                         logging.info(f"Successfully cleaned JSON using strategy {i + 1}")
                         # Create a new message object with cleaned content
-                        return _Message(cleaned_content)
+                        return _Message(cleaned_content, usage)
                 except (json.JSONDecodeError, Exception) as cleanup_error:
                     logging.warning(f"Cleanup strategy {i + 1} failed: {cleanup_error}")
                     continue
@@ -325,7 +341,7 @@ def get_structured_data(
                     "all_cleanup_failed": True,
                 },
             }
-            return _Message(json.dumps(error_response))
+            return _Message(json.dumps(error_response), usage)
 
     except Exception as e:
         logging.error(f"GPT API call failed: {e}")
@@ -334,8 +350,12 @@ def get_structured_data(
 
 
 def perform_gpt_evaluation_and_enrichment(
-    images: List[str], extracted_data: Dict, json_schema: str, cosmos_config_container=None
-) -> Dict:
+    images: List[str],
+    extracted_data: Dict,
+    json_schema: str,
+    cosmos_config_container=None,
+    model: str | None = None,
+) -> tuple[Dict, dict[str, Any]]:
     system_content = f"""
     You are an AI assistant tasked with evaluating extracted data from a document.
 
@@ -388,7 +408,8 @@ def perform_gpt_evaluation_and_enrichment(
     messages = [user_message(contents)]
 
     try:
-        result = run_chat_sync(messages, instructions=system_content, seed=0)
+        result = run_chat_sync(messages, instructions=system_content, seed=0, model=model)
+        usage = _usage_from_chat_result(result)
 
         raw_content = result.text
         finish_reason = result.finish_reason
@@ -411,10 +432,10 @@ def perform_gpt_evaluation_and_enrichment(
                     "Process the evaluation in smaller chunks",
                     "Use a model with higher token limits if available",
                 ],
-            }
+            }, usage
 
         try:
-            return json.loads(raw_content)
+            return json.loads(raw_content), usage
         except json.JSONDecodeError as json_error:
             logging.error(f"GPT evaluation returned invalid JSON: {json_error}")
             logging.error(f"Raw evaluation content: {raw_content}")
@@ -446,7 +467,7 @@ def perform_gpt_evaluation_and_enrichment(
                         "Process evaluation in smaller chunks or split into multiple simpler evaluations",
                         "Consider skipping evaluation for very large documents if extraction quality is sufficient",
                     ],
-                }
+                }, usage
 
             # Multiple fallback strategies for JSON cleaning
             cleanup_strategies = [
@@ -462,7 +483,7 @@ def perform_gpt_evaluation_and_enrichment(
                     if cleaned_content:
                         result = json.loads(cleaned_content)  # Validate it parses
                         logging.info(f"Successfully cleaned evaluation JSON using strategy {i + 1}")
-                        return result
+                        return result, usage
                 except (json.JSONDecodeError, Exception) as cleanup_error:
                     logging.warning(f"Evaluation cleanup strategy {i + 1} failed: {cleanup_error}")
                     continue
@@ -484,7 +505,7 @@ def perform_gpt_evaluation_and_enrichment(
                     "Process evaluation in smaller chunks or with fewer images",
                     "Consider using extraction results without evaluation if quality is acceptable",
                 ],
-            }
+            }, usage
 
     except Exception as e:
         logging.error(f"Failed to get GPT evaluation: {e}")
@@ -499,10 +520,10 @@ def perform_gpt_evaluation_and_enrichment(
                 "Reduce document complexity if the issue persists",
                 "Consider using extraction results without evaluation",
             ],
-        }
+        }, {}
 
 
-def get_summary_with_gpt(mkd_output_json, cosmos_config_container=None) -> Any:
+def get_summary_with_gpt(mkd_output_json, cosmos_config_container=None, model: str | None = None) -> Any:
     reasoning_prompt = """
     Use the provided data represented in the schema to produce a summary in natural language.
     The format should be a few sentences summary of the document.
@@ -510,7 +531,7 @@ def get_summary_with_gpt(mkd_output_json, cosmos_config_container=None) -> Any:
     messages = [user_message([text_content(json.dumps(mkd_output_json))])]
 
     # Route the (text-only) summary to a cheaper deployment when configured.
-    summary_model = get_config(cosmos_config_container).get("summary_model_deployment")
+    summary_model = model or get_config(cosmos_config_container).get("summary_model_deployment")
     result = run_chat_sync(messages, instructions=reasoning_prompt, seed=0, model=summary_model)
 
-    return _Message(result.text)
+    return _Message(result.text, _usage_from_chat_result(result))

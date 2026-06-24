@@ -48,6 +48,29 @@ param extractionBackend string = 'gpt'
 param enableImagePreprocessing bool = false
 param summaryModelDeploymentName string = ''
 
+@description('Default extraction tier when a dataset or request does not specify one')
+@allowed([
+  'economy'
+  'standard'
+  'premium'
+])
+param defaultExtractionTier string = 'standard'
+
+@description('Whether pricing should use Azure Retail Prices API before fallback prices')
+param pricingUseRetailApi bool = true
+
+@description('Fraction of low-quality pages that routes a document to review')
+param routingLowQualityPageFraction string = '0.5'
+
+@description('Minimum low-quality page count that routes a document to review')
+param routingLowQualityMinPages string = '1'
+
+@description('Minimum OCR character count before OCR is considered unreadable')
+param routingMinOcrTextLength string = '20'
+
+@description('Maximum page count eligible for economy tier auto-routing')
+param routingEconomyMaxPages string = '1'
+
 @description('Content Understanding default completion model deployment name')
 param contentUnderstandingCompletionModel string = ''
 
@@ -141,6 +164,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_AI_PROJECT_ENDPOINT', value: foundryProjectEndpoint }
             { name: 'AZURE_OPENAI_MODEL_DEPLOYMENT_NAME', value: azureOpenaiModelDeploymentName }
             // Content Understanding extraction backend
+            { name: 'AZURE_LOCATION', value: location }
             { name: 'AZURE_CONTENT_UNDERSTANDING_ENDPOINT', value: contentUnderstandingEndpoint }
             { name: 'EXTRACTION_BACKEND', value: extractionBackend }
             { name: 'CONTENT_UNDERSTANDING_COMPLETION_MODEL', value: contentUnderstandingCompletionModel }
@@ -149,6 +173,16 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'ENABLE_IMAGE_PREPROCESSING', value: toLower(string(enableImagePreprocessing)) }
             // Cost-effective summary model (empty = use main deployment)
             { name: 'SUMMARY_MODEL_DEPLOYMENT_NAME', value: summaryModelDeploymentName }
+            // Cost controls and routing defaults
+            { name: 'DEFAULT_EXTRACTION_TIER', value: defaultExtractionTier }
+            { name: 'PRICING_USE_RETAIL_API', value: toLower(string(pricingUseRetailApi)) }
+            { name: 'ROUTING_LOW_QUALITY_PAGE_FRACTION', value: routingLowQualityPageFraction }
+            { name: 'ROUTING_LOW_QUALITY_MIN_PAGES', value: routingLowQualityMinPages }
+            { name: 'ROUTING_MIN_OCR_TEXT_LENGTH', value: routingMinOcrTextLength }
+            { name: 'ROUTING_ECONOMY_MAX_PAGES', value: routingEconomyMaxPages }
+            // Mock flag-review email defaults
+            { name: 'FLAG_EMAIL_FROM', value: 'noreply@argus.example' }
+            { name: 'FLAG_EMAIL_TO_FALLBACK', value: 'uploader@argus.example' }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: applicationInsightsConnectionString }
             { name: 'AZURE_CLIENT_ID', value: userManagedIdentityClientId }
             { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }

@@ -26,6 +26,7 @@ from models import BlobInputStream
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "functionapp"))
 from ai_ocr.azure.content_understanding import get_cu_extraction
+from ai_ocr.cost import CostTracker, di_page_price
 from ai_ocr.model import Config
 from ai_ocr.process import (
     fetch_model_prompt_and_schema,
@@ -39,8 +40,94 @@ from ai_ocr.process import (
     update_state,
     write_blob_to_temp_file,
 )
+from ai_ocr.rules import apply_routing, reduce_schema, run_extractors
+from ai_ocr.tiers import resolve_effective_config
 
 logger = logging.getLogger(__name__)
+
+CONTENT_UNDERSTANDING_FALLBACK_USD_PER_PAGE = 0.01
+
+
+def _cost_region() -> str:
+    return os.getenv("AZURE_LOCATION") or os.getenv("AZURE_REGION") or "eastus2"
+
+
+def _usage_value(usage: dict | None, key: str) -> int:
+    if not usage:
+        return 0
+    try:
+        return int(usage.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _record_token_cost(tracker: CostTracker, stage: str, fallback_model: str, usage: dict | None) -> None:
+    model = str((usage or {}).get("model") or fallback_model)
+    tracker.record(stage, model, _usage_value(usage, "input_tokens"), _usage_value(usage, "output_tokens"))
+
+
+def _schema_to_dict(schema: Any) -> dict:
+    if isinstance(schema, dict):
+        return schema
+    try:
+        parsed = json.loads(schema)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _has_pinned_tier(processing_options: dict) -> bool:
+    return bool(processing_options.get("tier") or processing_options.get("extraction_tier"))
+
+
+def _chunk_page_count(index: int, file_paths: list[str], max_pages_per_chunk: int, num_pages: int | None) -> int:
+    if not num_pages:
+        return 1
+    if len(file_paths) <= 1:
+        return int(num_pages)
+    return max(min(max_pages_per_chunk, int(num_pages) - (index * max_pages_per_chunk)), 0)
+
+
+def _ocr_cost_model() -> str:
+    provider = os.getenv("OCR_PROVIDER", "azure").lower()
+    return "document-intelligence" if provider == "azure" else provider
+
+
+def _cu_cost_model() -> str:
+    return os.getenv("CONTENT_UNDERSTANDING_ANALYZER_ID") or "content-understanding"
+
+
+def _cu_page_price() -> float:
+    raw_value = os.getenv("CONTENT_UNDERSTANDING_PAGE_PRICE_USD")
+    if raw_value:
+        try:
+            return float(raw_value)
+        except ValueError:
+            logger.warning("Invalid CONTENT_UNDERSTANDING_PAGE_PRICE_USD=%s; using fallback", raw_value)
+    # Fallback until Azure Retail exposes a reliable Content Understanding page meter.
+    return CONTENT_UNDERSTANDING_FALLBACK_USD_PER_PAGE
+
+
+def _quality_flag_reasons(image_quality_reports: list[dict]) -> list[str]:
+    reasons: list[str] = []
+    for report in image_quality_reports:
+        if not report.get("flagged_low_quality"):
+            continue
+        page = report.get("page") or "page"
+        report_reasons = report.get("reasons") or ["low_quality"]
+        reasons.extend(f"{page}:{reason}" for reason in report_reasons)
+    return reasons
+
+
+def _set_flag(document: dict, reasons: list[str], stage: str) -> None:
+    if not reasons:
+        return
+    document["properties"]["flag"] = {
+        "flagged": True,
+        "reasons": reasons,
+        "stage": stage,
+        "flagged_at": datetime.now().isoformat(),
+    }
 
 
 def create_blob_input_stream(blob_url: str) -> BlobInputStream:
@@ -296,6 +383,19 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
     processing_times = {}
     file_paths = []
     temp_dirs = []
+    summary_time = 0
+    processing_options = {}
+    region = _cost_region()
+    tracker = CostTracker(region=region)
+    cost_stages: set[str] = set()
+
+    def record_page_cost(stage: str, model: str, pages: int, usd: float) -> None:
+        tracker.record_pages(stage, model, pages, usd)
+        cost_stages.add(stage)
+
+    def record_token_cost(stage: str, fallback_model: str, usage: dict | None) -> None:
+        _record_token_cost(tracker, stage, fallback_model, usage)
+        cost_stages.add(stage)
 
     try:
         # Get processing options from document
@@ -303,12 +403,14 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             "processing_options",
             {"include_ocr": True, "include_images": True, "enable_summary": True, "enable_evaluation": True},
         )
+        tier_pinned = _has_pinned_tier(processing_options)
+        eff = resolve_effective_config(processing_options.get("tier"), processing_options, os.environ)
+        document["properties"]["tier"] = eff.tier
 
         logger.info(
-            f"Processing options: OCR={processing_options.get('include_ocr', True)}, "
-            f"Images={processing_options.get('include_images', True)}, "
-            f"Summary={processing_options.get('enable_summary', True)}, "
-            f"Evaluation={processing_options.get('enable_evaluation', True)}"
+            f"Processing options: tier={eff.tier}, OCR={eff.enable_ocr}, "
+            f"Images={eff.enable_images}, Summary={eff.enable_summary}, "
+            f"Evaluation={eff.enable_evaluation}, Rules={eff.use_rules_engine}"
         )
 
         max_pages_per_chunk = document["model_input"].get("max_pages_per_chunk", 10)
@@ -336,16 +438,11 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             processing_options.get("extraction_backend") or os.getenv("EXTRACTION_BACKEND", "gpt")
         ).lower()
 
-        # Evaluation defaults off for Content Understanding (it returns its own
-        # confidence), on for the GPT backend. A per-dataset value always wins.
-        default_eval = extraction_backend != "content_understanding"
-        enable_evaluation = processing_options.get("enable_evaluation", default_eval)
+        enable_evaluation = eff.enable_evaluation
 
         # Per-dataset image quality preprocessing options (OpenCV enhance_retry).
         quality_options = {
-            "enable_preprocessing": processing_options.get(
-                "enable_preprocessing", os.getenv("ENABLE_IMAGE_PREPROCESSING", "false").lower() == "true"
-            ),
+            "enable_preprocessing": eff.enable_preprocessing,
             "enable_enhancement": processing_options.get("enable_enhancement", True),
             "skip_if_still_bad": processing_options.get("skip_if_still_bad", False),
             "thresholds": processing_options.get("quality_thresholds"),
@@ -374,6 +471,13 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 cu_start = datetime.now()
                 cu_result = get_cu_extraction(file_path, schema_obj, dataset_name, None)
                 cu_time = (datetime.now() - cu_start).total_seconds()
+                chunk_pages = _chunk_page_count(i, file_paths, max_pages_per_chunk, num_pages)
+                record_page_cost(
+                    "content_understanding",
+                    _cu_cost_model(),
+                    chunk_pages,
+                    chunk_pages * _cu_page_price(),
+                )
 
                 ocr_results.append(cu_result.get("ocr_output", ""))
                 extracted_data_list.append(cu_result.get("extracted_data", {}))
@@ -383,7 +487,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 total_extraction_time += cu_time
 
                 # Prepare images only when needed downstream (evaluation uses vision).
-                if enable_evaluation:
+                if enable_evaluation and eff.enable_images:
                     temp_dir, imgs, reports = prepare_images(file_path, Config(), quality_options)
                     temp_dirs.append(temp_dir)
                     image_cache[i] = imgs
@@ -407,15 +511,21 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             ocr_results = []
             total_ocr_time = 0
 
-            if processing_options.get("include_ocr", True):
+            if eff.enable_ocr:
                 logger.info(f"Starting OCR processing for {len(file_paths)} chunks")
                 for i, file_path in enumerate(file_paths):
                     logger.info(f"Processing OCR for chunk {i + 1}/{len(file_paths)}")
-                    ocr_result, ocr_time = run_ocr_processing(
+                    ocr_result, ocr_time, ocr_pages = run_ocr_processing(
                         file_path, document, data_container, None, update_state=False
                     )
                     ocr_results.append(ocr_result)
                     total_ocr_time += ocr_time
+                    record_page_cost(
+                        "ocr",
+                        _ocr_cost_model(),
+                        ocr_pages,
+                        di_page_price(region) * ocr_pages,
+                    )
 
                 processing_times["ocr_processing_time"] = total_ocr_time
                 document["extracted_data"]["ocr_output"] = "\n".join(str(result) for result in ocr_results)
@@ -427,43 +537,116 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 ocr_results = [""] * len(file_paths)
                 processing_times["ocr_processing_time"] = 0
                 document["extracted_data"]["ocr_output"] = ""
+                record_page_cost("ocr", _ocr_cost_model(), 0, 0)
                 update_state(document, data_container, "ocr_skipped", True, 0)
                 data_container.upsert_item(document)
 
-            # Step 2: GPT extraction
-            logger.info(f"Starting GPT extraction for {len(file_paths)} chunks")
-            total_extraction_time = 0
-
+            # Prepare images before routing/extraction so quality can pre-flag review work.
             for i, file_path in enumerate(file_paths):
-                logger.info(f"Processing GPT extraction for chunk {i + 1}/{len(file_paths)}")
-
-                if processing_options.get("include_images", True):
+                if eff.enable_images:
                     temp_dir, imgs, reports = prepare_images(file_path, Config(), quality_options)
                     temp_dirs.append(temp_dir)
                     image_cache[i] = imgs
                     image_quality_reports.extend(reports)
                 else:
-                    imgs = []
                     image_cache[i] = []
 
-                ocr_text_for_extraction = ocr_results[i] if processing_options.get("include_ocr", True) else ""
+            if image_quality_reports:
+                document["properties"]["image_quality"] = image_quality_reports
+                if any(r.get("flagged_low_quality") for r in image_quality_reports):
+                    document["properties"]["image_quality_warning"] = True
+                    _set_flag(document, _quality_flag_reasons(image_quality_reports), "quality")
+            elif document["properties"].get("image_quality_warning"):
+                _set_flag(document, ["image_quality_warning"], "quality")
 
-                if not ocr_text_for_extraction and not imgs:
-                    logger.error("No input provided to GPT extraction - both OCR text and images are empty!")
-                    raise ValueError("Cannot perform GPT extraction without either OCR text or images")
+            combined_ocr_text = "\n".join(str(result) for result in ocr_results)
+            document["properties"]["num_pages"] = num_pages or len(file_paths) or 1
+            document["properties"]["ocr_text_length"] = len(combined_ocr_text.strip())
 
-                extracted_data, extraction_time = run_gpt_extraction(
-                    ocr_text_for_extraction,
-                    document["model_input"]["model_prompt"],
-                    document["model_input"]["example_schema"],
-                    imgs,
+            if len(combined_ocr_text.strip()) < 20 and not any(image_cache.values()):
+                _set_flag(
                     document,
-                    data_container,
-                    None,
-                    update_state=False,
+                    ["ocr_text_unreadable_or_empty_and_no_usable_images"],
+                    "preflight",
                 )
-                extracted_data_list.append(extracted_data)
-                total_extraction_time += extraction_time
+
+            example_schema = document["model_input"]["example_schema"]
+            schema_obj = _schema_to_dict(example_schema)
+            rules_result = None
+            extraction_schema: Any = example_schema
+            if eff.use_rules_engine and processing_options.get("rules"):
+                rules_result = run_extractors(combined_ocr_text, schema_obj, processing_options["rules"])
+                document["properties"]["rules_all_required_filled"] = rules_result.all_required_filled
+                document["properties"]["rules_engine_result"] = rules_result.to_dict()
+                if rules_result.all_required_filled:
+                    extraction_schema = schema_obj
+                else:
+                    extraction_schema = reduce_schema(schema_obj, rules_result.remaining_fields)
+
+            routing_options = dict(processing_options)
+            routing_options.update(
+                {
+                    "enable_ocr": eff.enable_ocr,
+                    "num_pages": document["properties"]["num_pages"],
+                    "ocr_text_length": document["properties"]["ocr_text_length"],
+                }
+            )
+            routing_decision = apply_routing(document["properties"], routing_options, os.environ)
+            document["properties"]["routing_decision"] = routing_decision.to_dict()
+            if routing_decision.route_to_review:
+                low_quality = any("low_quality" in reason for reason in routing_decision.reasons)
+                _set_flag(document, routing_decision.reasons, "quality" if low_quality else "preflight")
+
+            if not tier_pinned and routing_decision.tier != eff.tier:
+                eff = resolve_effective_config(routing_decision.tier, processing_options, os.environ)
+                document["properties"]["tier"] = eff.tier
+                enable_evaluation = eff.enable_evaluation
+                if not eff.enable_images:
+                    image_cache = {i: [] for i in range(len(file_paths))}
+                logger.info("Routing selected tier=%s", eff.tier)
+
+            data_container.upsert_item(document)
+
+            # Step 2: GPT extraction
+            logger.info(f"Starting GPT extraction for {len(file_paths)} chunks")
+            total_extraction_time = 0
+
+            if routing_decision.skip_extraction:
+                logger.info("Skipping GPT extraction due to routing decision: %s", routing_decision.reasons)
+                fallback_data = rules_result.filled if rules_result and rules_result.all_required_filled else {}
+                extracted_data_list = [copy.deepcopy(fallback_data) for _ in file_paths]
+                record_token_cost("extraction", eff.extraction_model, None)
+            elif rules_result and rules_result.all_required_filled:
+                logger.info("Skipping GPT extraction because rules filled all required fields")
+                extracted_data_list = [copy.deepcopy(rules_result.filled) for _ in file_paths]
+                record_token_cost("extraction", eff.extraction_model, None)
+            else:
+                for i, file_path in enumerate(file_paths):
+                    logger.info(f"Processing GPT extraction for chunk {i + 1}/{len(file_paths)}")
+
+                    imgs = image_cache.get(i, [])
+                    ocr_text_for_extraction = ocr_results[i] if eff.enable_ocr else ""
+
+                    if not ocr_text_for_extraction and not imgs:
+                        logger.error("No input provided to GPT extraction - both OCR text and images are empty!")
+                        raise ValueError("Cannot perform GPT extraction without either OCR text or images")
+
+                    extracted_data, extraction_time, usage = run_gpt_extraction(
+                        ocr_text_for_extraction,
+                        document["model_input"]["model_prompt"],
+                        extraction_schema,
+                        imgs,
+                        document,
+                        data_container,
+                        None,
+                        update_state=False,
+                        model=eff.extraction_model,
+                    )
+                    if rules_result and rules_result.filled and isinstance(extracted_data, dict):
+                        extracted_data = _deep_merge_data(extracted_data, rules_result.filled)
+                    extracted_data_list.append(extracted_data)
+                    total_extraction_time += extraction_time
+                    record_token_cost("extraction", eff.extraction_model, usage)
 
             processing_times["gpt_extraction_time"] = total_extraction_time
 
@@ -491,7 +674,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             for i, file_path in enumerate(file_paths):
                 imgs = image_cache.get(i, [])
 
-                enriched_data, evaluation_time = run_gpt_evaluation(
+                enriched_data, evaluation_time, usage = run_gpt_evaluation(
                     imgs,
                     extracted_data_list[i],
                     document["model_input"]["example_schema"],
@@ -499,9 +682,11 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                     data_container,
                     None,
                     update_state=False,
+                    model=eff.extraction_model,
                 )
                 evaluation_results.append(enriched_data)
                 total_evaluation_time += evaluation_time
+                record_token_cost("evaluation", eff.extraction_model, usage)
 
             processing_times["gpt_evaluation_time"] = total_evaluation_time
 
@@ -519,15 +704,21 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             document["extracted_data"]["gpt_extraction_output_with_evaluation"] = structured_evaluation
             update_state(document, data_container, "gpt_evaluation_skipped", True, 0)
             processing_times["gpt_evaluation_time"] = 0
+            record_token_cost("evaluation", eff.extraction_model, None)
 
         # Step 4: Summary (conditional)
-        summary_time = 0
-        if processing_options.get("enable_summary", True):
+        if eff.enable_summary:
             logger.info("Starting GPT summary processing")
             combined_ocr_text = "\n".join(str(result) for result in ocr_results)
-            summary_data, summary_time = run_gpt_summary(
-                combined_ocr_text, document, data_container, None, update_state=False
+            summary_data, summary_time, usage = run_gpt_summary(
+                combined_ocr_text,
+                document,
+                data_container,
+                None,
+                update_state=False,
+                model=eff.summary_model,
             )
+            record_token_cost("summary", eff.summary_model, usage)
 
             document["extracted_data"]["classification"] = summary_data["classification"]
             document["extracted_data"]["gpt_summary_output"] = summary_data["gpt_summary_output"]
@@ -536,6 +727,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             document["extracted_data"]["classification"] = ""
             document["extracted_data"]["gpt_summary_output"] = ""
             update_state(document, data_container, "gpt_summary_skipped", True, 0)
+            record_token_cost("summary", eff.summary_model, None)
 
         # Final update
         overall_end_time = datetime.now()
@@ -547,6 +739,19 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             f"Extraction: {processing_times['gpt_extraction_time']:.2f}s | "
             f"Evaluation: {processing_times.get('gpt_evaluation_time', 0):.2f}s | Summary: {summary_time:.2f}s"
         )
+
+        if extraction_backend == "content_understanding" and "content_understanding" not in cost_stages:
+            record_page_cost("content_understanding", _cu_cost_model(), 0, 0)
+        if extraction_backend != "content_understanding" and "ocr" not in cost_stages:
+            record_page_cost("ocr", _ocr_cost_model(), 0, 0)
+        if extraction_backend != "content_understanding" and "extraction" not in cost_stages:
+            record_token_cost("extraction", eff.extraction_model, None)
+        if "evaluation" not in cost_stages:
+            record_token_cost("evaluation", eff.extraction_model, None)
+        if "summary" not in cost_stages:
+            record_token_cost("summary", eff.summary_model, None)
+        document["properties"]["cost"] = tracker.aggregate(num_pages or document["properties"].get("num_pages", 0))
+        document["properties"]["tier"] = eff.tier
 
         update_final_document(
             document,
@@ -563,6 +768,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
         logger.error(f"Processing error in process_blob: {str(e)}")
         document["errors"].append(f"Processing error: {str(e)}")
         document["state"]["processing_completed"] = False
+        document["properties"]["cost"] = tracker.aggregate(num_pages or document["properties"].get("num_pages", 0))
 
         # Mark incomplete steps as failed
         if processing_options.get("include_ocr", True) and "ocr_processing_time" not in processing_times:

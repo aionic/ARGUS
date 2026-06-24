@@ -13,7 +13,8 @@ import {
   Sun,
   Menu,
   X,
-  FileCode
+  FileCode,
+  FileWarning
 } from "lucide-react"
 import { useTheme } from "next-themes"
 
@@ -30,6 +31,7 @@ import { Plug } from "lucide-react"
 const navItems = [
   { href: "/", label: "Process Files", icon: Brain },
   { href: "/explore", label: "Explore Data", icon: Search },
+  { href: "/review", label: "Review", icon: FileWarning },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/instructions", label: "Instructions", icon: BookOpen },
   { href: "/api-docs", label: "API Docs", icon: FileCode },

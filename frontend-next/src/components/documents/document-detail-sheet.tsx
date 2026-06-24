@@ -29,6 +29,7 @@ import {
   Save,
   RefreshCw,
   Settings,
+  DollarSign,
   ZoomIn,
   ZoomOut,
   Move,
@@ -44,9 +45,17 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { backendClient, Document } from "@/lib/api-client"
+import { backendClient, type Document, type Cost } from "@/lib/api-client"
 import { formatDate, formatDuration, formatBytes } from "@/lib/utils"
 
 interface ProcessedDocument {
@@ -65,6 +74,9 @@ interface ProcessedDocument {
   totalTime?: number
   pages?: number
   size?: number
+  cost?: Cost
+  tier?: string
+  flagged?: boolean
   selected: boolean
 }
 
@@ -90,6 +102,26 @@ interface Correction {
   correction_number?: number
 }
 
+function formatUsd(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A"
+  const absValue = Math.abs(value)
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: absValue > 0 && absValue < 1 ? 4 : 2,
+  }).format(value)
+}
+
+function formatNumber(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A"
+  return new Intl.NumberFormat("en-US").format(value)
+}
+
+function formatStageName(stage: string): string {
+  return stage.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
 export function DocumentDetailSheet({
   document,
   onClose,
@@ -101,21 +133,21 @@ export function DocumentDetailSheet({
   const [isLoading, setIsLoading] = React.useState(false)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState("extracted")
-  
+
   // Chat state
   const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = React.useState("")
   const [isSending, setIsSending] = React.useState(false)
-  
+
   // Corrections state
   const [corrections, setCorrections] = React.useState<Correction[]>([])
-  
+
   // Edit mode state for extraction
   const [isEditMode, setIsEditMode] = React.useState(false)
   const [editedJson, setEditedJson] = React.useState("")
   const [editNotes, setEditNotes] = React.useState("")
   const [isSavingEdit, setIsSavingEdit] = React.useState(false)
-  
+
   // Helper to check for actual errors (not empty string or empty array)
   // ProcessedDocument.errors is already normalized to string by explore page
   const hasActualErrors = React.useMemo((): boolean => {
@@ -123,16 +155,16 @@ export function DocumentDetailSheet({
     if (!errors) return false
     return errors.trim().length > 0 && errors.trim() !== '[]'
   }, [document?.errors])
-  
+
   // Get error message as string
   const errorMessage = document?.errors || ''
-  
+
   // PDF viewer state
   const [currentPage, setCurrentPage] = React.useState(1)
-  
+
   // State for file URL
   const [fileUrl, setFileUrl] = React.useState<string | undefined>(undefined)
-  
+
   // Image viewer state (zoom, pan, rotation)
   const [imageZoom, setImageZoom] = React.useState(1)
   const [imagePosition, setImagePosition] = React.useState({ x: 0, y: 0 })
@@ -140,22 +172,22 @@ export function DocumentDetailSheet({
   const [isDragging, setIsDragging] = React.useState(false)
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 })
   const imageContainerRef = React.useRef<HTMLDivElement>(null)
-  
+
   // Check if file is an image
   const isImageFile = React.useMemo(() => {
     const fileName = document?.fileName?.toLowerCase() || ''
-    return fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || 
-           fileName.endsWith('.png') || fileName.endsWith('.gif') || 
+    return fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') ||
+           fileName.endsWith('.png') || fileName.endsWith('.gif') ||
            fileName.endsWith('.webp') || fileName.endsWith('.bmp')
   }, [document?.fileName])
-  
+
   // Reset image viewer state when document changes
   React.useEffect(() => {
     setImageZoom(1)
     setImagePosition({ x: 0, y: 0 })
     setImageRotation(0)
   }, [document?.id])
-  
+
   // Image zoom handlers
   const handleZoomIn = () => setImageZoom(prev => Math.min(prev + 0.25, 5))
   const handleZoomOut = () => setImageZoom(prev => Math.max(prev - 0.25, 0.25))
@@ -165,7 +197,7 @@ export function DocumentDetailSheet({
     setImageRotation(0)
   }
   const handleRotate = () => setImageRotation(prev => (prev + 90) % 360)
-  
+
   // Mouse handlers for panning
   const handleMouseDown = (e: React.MouseEvent) => {
     if (imageZoom > 1) {
@@ -173,7 +205,7 @@ export function DocumentDetailSheet({
       setDragStart({ x: e.clientX - imagePosition.x, y: e.clientY - imagePosition.y })
     }
   }
-  
+
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isDragging && imageZoom > 1) {
       setImagePosition({
@@ -182,17 +214,17 @@ export function DocumentDetailSheet({
       })
     }
   }
-  
+
   const handleMouseUp = () => setIsDragging(false)
   const handleMouseLeave = () => setIsDragging(false)
-  
+
   // Wheel zoom handler
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -0.1 : 0.1
     setImageZoom(prev => Math.min(Math.max(prev + delta, 0.25), 5))
   }
-  
+
   // Load full document data
   React.useEffect(() => {
     if (document) {
@@ -248,12 +280,12 @@ export function DocumentDetailSheet({
   // Chat functions
   async function sendMessage() {
     if (!chatInput.trim() || !document) return
-    
+
     const userMessage = chatInput.trim()
     setChatMessages((prev) => [...prev, { role: "user", content: userMessage }])
     setChatInput("")
     setIsSending(true)
-    
+
     try {
       const response = await backendClient.sendChatMessage(document.id, userMessage)
       setChatMessages((prev) => [
@@ -293,17 +325,23 @@ export function DocumentDetailSheet({
 
   // Parse extracted_data from the document structure - MUST be before early return
   const rawExtractedData = fullDocument?.extracted_data as Record<string, unknown> | undefined
-  
+
   // Get specific extraction outputs - handle both object and string formats
   const gptExtractionOutput = rawExtractedData?.gpt_extraction_output
   const gptExtractionWithEval = rawExtractedData?.gpt_extraction_output_with_evaluation
   const gptSummaryOutput = rawExtractedData?.gpt_summary_output as string | undefined
   const ocrOutput = rawExtractedData?.ocr_output
-  
+
   // Get processing state and properties for timing info
   const processingState = fullDocument?.state as Record<string, unknown> | undefined
   const processingProperties = fullDocument?.properties as Record<string, unknown> | undefined
-  
+  const typedProperties = fullDocument?.properties as (NonNullable<Document["properties"]> & { tier?: string }) | undefined
+  const processingOptions = fullDocument?.processing_options as Record<string, unknown> | undefined
+  const documentCost = typedProperties?.cost ?? document?.cost
+  const tierUsed = typedProperties?.tier
+    ?? (typeof processingOptions?.tier === "string" ? processingOptions.tier : undefined)
+    ?? document?.tier
+
   // Parse JSON strings if needed - useMemo must be called unconditionally
   const extractedData = React.useMemo(() => {
     if (gptExtractionOutput) {
@@ -320,7 +358,7 @@ export function DocumentDetailSheet({
     }
     return rawExtractedData
   }, [gptExtractionOutput, rawExtractedData])
-  
+
   const evaluationData = React.useMemo(() => {
     if (gptExtractionWithEval) {
       // If it's already an object, return it directly
@@ -336,7 +374,7 @@ export function DocumentDetailSheet({
     }
     return null
   }, [gptExtractionWithEval])
-  
+
   // Combine OCR text - handle both string and array formats
   const ocrText = React.useMemo(() => {
     if (ocrOutput) {
@@ -346,14 +384,14 @@ export function DocumentDetailSheet({
       }
       // If it's an array of page objects, combine them
       if (Array.isArray(ocrOutput)) {
-        return ocrOutput.map((page: { page_number?: number; page_text?: string }) => 
+        return ocrOutput.map((page: { page_number?: number; page_text?: string }) =>
           `--- Page ${(page.page_number || 0) + 1} ---\n${page.page_text || ''}`
         ).join('\n\n')
       }
     }
     return fullDocument?.ocr_text as string | undefined
   }, [ocrOutput, fullDocument?.ocr_text])
-  
+
   const summaryData = gptSummaryOutput || fullDocument?.summary as string | undefined
 
   // Early return AFTER all hooks
@@ -371,7 +409,7 @@ export function DocumentDetailSheet({
             className="fixed inset-0 bg-black/50 z-40"
             onClick={onClose}
           />
-          
+
           {/* Sheet */}
           <motion.div
             initial={{ x: "100%" }}
@@ -417,9 +455,9 @@ export function DocumentDetailSheet({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={async () => {
                     setIsRefreshing(true)
                     await loadFullDocument()
@@ -447,32 +485,32 @@ export function DocumentDetailSheet({
             {/* Processing Status */}
             <div className="px-6 py-4 border-b bg-gradient-to-r from-muted/50 to-muted/20">
               <div className="flex items-center justify-between gap-6">
-                <ProcessingStep 
-                  label="File Landed" 
-                  completed={processingState?.file_landed as boolean ?? document.fileLanded} 
+                <ProcessingStep
+                  label="File Landed"
+                  completed={processingState?.file_landed as boolean ?? document.fileLanded}
                   hasError={hasActualErrors && !document.fileLanded}
                 />
                 <div className="h-[2px] flex-1 bg-border" />
-                <ProcessingStep 
-                  label="OCR" 
+                <ProcessingStep
+                  label="OCR"
                   completed={processingState?.ocr_completed as boolean ?? document.ocrCompleted}
                   hasError={hasActualErrors && document.fileLanded && !document.ocrCompleted}
                 />
                 <div className="h-[2px] flex-1 bg-border" />
-                <ProcessingStep 
-                  label="Extraction" 
+                <ProcessingStep
+                  label="Extraction"
                   completed={processingState?.gpt_extraction_completed as boolean ?? document.gptExtraction}
                   hasError={hasActualErrors && document.ocrCompleted && !document.gptExtraction}
                 />
                 <div className="h-[2px] flex-1 bg-border" />
-                <ProcessingStep 
-                  label="Evaluation" 
+                <ProcessingStep
+                  label="Evaluation"
                   completed={processingState?.gpt_evaluation_completed as boolean ?? document.gptEvaluation}
                   hasError={hasActualErrors && document.gptExtraction && !document.gptEvaluation}
                 />
                 <div className="h-[2px] flex-1 bg-border" />
-                <ProcessingStep 
-                  label="Summary" 
+                <ProcessingStep
+                  label="Summary"
                   completed={processingState?.gpt_summary_completed as boolean ?? document.gptSummary}
                   hasError={hasActualErrors && document.gptEvaluation && !document.gptSummary}
                 />
@@ -532,7 +570,7 @@ export function DocumentDetailSheet({
                   <CardContent className="flex-1 overflow-hidden p-4">
                     {fileUrl ? (
                       isImageFile ? (
-                        <div 
+                        <div
                           ref={imageContainerRef}
                           className="w-full h-full rounded-lg border overflow-hidden bg-muted/30 relative"
                           style={{ cursor: imageZoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
@@ -593,6 +631,10 @@ export function DocumentDetailSheet({
                   <TabsTrigger value="details" className="flex items-center gap-2">
                     <Clock className="h-4 w-4" />
                     Details
+                  </TabsTrigger>
+                  <TabsTrigger value="cost" className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" />
+                    Cost
                   </TabsTrigger>
                   <TabsTrigger value="chat" className="flex items-center gap-2">
                     <MessageSquare className="h-4 w-4" />
@@ -660,7 +702,7 @@ export function DocumentDetailSheet({
                                           // Validate JSON
                                           const parsed = JSON.parse(editedJson)
                                           setIsSavingEdit(true)
-                                          
+
                                           // Submit correction via API with the new format
                                           await backendClient.submitCorrection(
                                             document.id,
@@ -668,7 +710,7 @@ export function DocumentDetailSheet({
                                             editNotes.trim() || "Full extraction edit",
                                             "anonymous"
                                           )
-                                          
+
                                           toast.success("Correction saved successfully!")
                                           setIsEditMode(false)
                                           setEditNotes("")
@@ -732,8 +774,8 @@ export function DocumentDetailSheet({
                               </div>
                             ) : (
                               <pre className="text-sm bg-muted p-4 rounded-lg whitespace-pre-wrap break-words">
-                                {extractedData 
-                                  ? JSON.stringify(extractedData, null, 2) 
+                                {extractedData
+                                  ? JSON.stringify(extractedData, null, 2)
                                   : "No extracted data available"}
                               </pre>
                             )}
@@ -879,38 +921,38 @@ export function DocumentDetailSheet({
                               <div className="bg-muted p-4 rounded-lg">
                                 <div className="text-sm text-muted-foreground">Total Processing Time</div>
                                 <div className="text-2xl font-bold">
-                                  {processingProperties?.total_time_seconds 
+                                  {processingProperties?.total_time_seconds
                                     ? `${Number(processingProperties.total_time_seconds).toFixed(2)}s`
-                                    : document.totalTime 
+                                    : document.totalTime
                                       ? `${document.totalTime.toFixed(2)}s`
                                       : "N/A"}
                                 </div>
                               </div>
-                              
+
                               {/* Step Timings */}
                               <div className="space-y-2">
-                                <ProcessingTimeRow 
-                                  label="File Upload" 
+                                <ProcessingTimeRow
+                                  label="File Upload"
                                   time={processingState?.file_landed_time_seconds as number}
                                   completed={document.fileLanded}
                                 />
-                                <ProcessingTimeRow 
-                                  label="OCR Processing" 
+                                <ProcessingTimeRow
+                                  label="OCR Processing"
                                   time={processingState?.ocr_completed_time_seconds as number}
                                   completed={document.ocrCompleted}
                                 />
-                                <ProcessingTimeRow 
-                                  label="GPT Extraction" 
+                                <ProcessingTimeRow
+                                  label="GPT Extraction"
                                   time={processingState?.gpt_extraction_completed_time_seconds as number}
                                   completed={document.gptExtraction}
                                 />
-                                <ProcessingTimeRow 
-                                  label="GPT Evaluation" 
+                                <ProcessingTimeRow
+                                  label="GPT Evaluation"
                                   time={processingState?.gpt_evaluation_completed_time_seconds as number}
                                   completed={document.gptEvaluation}
                                 />
-                                <ProcessingTimeRow 
-                                  label="GPT Summary" 
+                                <ProcessingTimeRow
+                                  label="GPT Summary"
                                   time={processingState?.gpt_summary_completed_time_seconds as number}
                                   completed={document.gptSummary}
                                 />
@@ -932,34 +974,34 @@ export function DocumentDetailSheet({
                               <PropertyRow label="Document ID" value={document.id} />
                               <PropertyRow label="Dataset" value={document.dataset} />
                               <PropertyRow label="File Name" value={document.fileName} />
-                              <PropertyRow 
-                                label="File Size" 
-                                value={processingProperties?.blob_size 
+                              <PropertyRow
+                                label="File Size"
+                                value={processingProperties?.blob_size
                                   ? formatBytes(Number(processingProperties.blob_size))
-                                  : document.size 
+                                  : document.size
                                     ? formatBytes(document.size)
                                     : "N/A"
-                                } 
+                                }
                               />
-                              <PropertyRow 
-                                label="Pages" 
-                                value={processingProperties?.num_pages?.toString() || document.pages?.toString() || "N/A"} 
+                              <PropertyRow
+                                label="Pages"
+                                value={processingProperties?.num_pages?.toString() || document.pages?.toString() || "N/A"}
                               />
-                              <PropertyRow 
-                                label="Blob Path" 
-                                value={processingProperties?.blob_name as string || "N/A"} 
+                              <PropertyRow
+                                label="Blob Path"
+                                value={processingProperties?.blob_name as string || "N/A"}
                               />
-                              <PropertyRow 
-                                label="Processed At" 
-                                value={processingProperties?.request_timestamp 
+                              <PropertyRow
+                                label="Processed At"
+                                value={processingProperties?.request_timestamp
                                   ? formatDate(new Date(processingProperties.request_timestamp as string))
                                   : formatDate(document.timestamp)
-                                } 
+                                }
                               />
                             </div>
                           </CardContent>
                         </Card>
-                            
+
                         {/* Model Configuration */}
                         <Card>
                           <CardHeader className="pb-3">
@@ -971,17 +1013,17 @@ export function DocumentDetailSheet({
                           <CardContent>
                             {fullDocument?.model_input ? (
                               <div className="space-y-3">
-                                <PropertyRow 
-                                  label="Model Deployment" 
-                                  value={(fullDocument.model_input as Record<string, unknown>)?.model_deployment as string || "N/A"} 
+                                <PropertyRow
+                                  label="Model Deployment"
+                                  value={(fullDocument.model_input as Record<string, unknown>)?.model_deployment as string || "N/A"}
                                 />
-                                <PropertyRow 
-                                  label="System Prompt" 
-                                  value={(fullDocument.model_input as Record<string, unknown>)?.model_prompt as string || "N/A"} 
+                                <PropertyRow
+                                  label="System Prompt"
+                                  value={(fullDocument.model_input as Record<string, unknown>)?.model_prompt as string || "N/A"}
                                 />
-                                <PropertyRow 
-                                  label="Max Pages Per Chunk" 
-                                  value={String((fullDocument.model_input as Record<string, unknown>)?.max_pages_per_chunk ?? "N/A")} 
+                                <PropertyRow
+                                  label="Max Pages Per Chunk"
+                                  value={String((fullDocument.model_input as Record<string, unknown>)?.max_pages_per_chunk ?? "N/A")}
                                 />
                                 {(() => {
                                   const modelInput = fullDocument.model_input as Record<string, unknown>
@@ -1002,15 +1044,15 @@ export function DocumentDetailSheet({
                             ) : (
                               <div className="text-sm text-muted-foreground">No model configuration available</div>
                             )}
-                            
+
                             {/* Processing Options */}
                             {fullDocument?.processing_options && (
                               <div className="mt-6">
                                 <h4 className="font-medium mb-3">Processing Options</h4>
                                 <div className="flex flex-wrap gap-2">
                                   {Object.entries(fullDocument.processing_options as Record<string, boolean>).map(([key, value]) => (
-                                    <Badge 
-                                      key={key} 
+                                    <Badge
+                                      key={key}
                                       variant={value ? "default" : "outline"}
                                       className={!value ? "opacity-50" : ""}
                                     >
@@ -1024,6 +1066,11 @@ export function DocumentDetailSheet({
                           </CardContent>
                         </Card>
                       </div>
+                    </TabsContent>
+
+                    {/* Cost Tab */}
+                    <TabsContent value="cost" className="absolute inset-0 m-0 p-4 overflow-auto data-[state=inactive]:hidden">
+                      <CostPanel cost={documentCost} tier={tierUsed} />
                     </TabsContent>
 
                     {/* Chat Tab */}
@@ -1126,7 +1173,7 @@ export function DocumentDetailSheet({
                                       variant="outline"
                                       size="sm"
                                       onClick={() => downloadJson(
-                                        corrections.length > 0 
+                                        corrections.length > 0
                                           ? corrections[0].original_data
                                           : (fullDocument.extracted_data?.gpt_extraction_output || fullDocument.extracted_data),
                                         `${document.fileName}_original.json`
@@ -1139,7 +1186,7 @@ export function DocumentDetailSheet({
                                   <div className="text-xs">
                                     <pre className="bg-background p-2 rounded mt-1 text-[11px] overflow-auto max-h-40">
                                       {JSON.stringify(
-                                        corrections.length > 0 
+                                        corrections.length > 0
                                           ? corrections[0].original_data
                                           : (fullDocument.extracted_data?.gpt_extraction_output || fullDocument.extracted_data),
                                         null,
@@ -1210,6 +1257,134 @@ export function DocumentDetailSheet({
   )
 }
 
+function PricingSourceBadge({ source }: { source: Cost["pricing_source"] }) {
+  if (source === "azure_retail") {
+    return <Badge className="bg-green-500 hover:bg-green-500">Live pricing</Badge>
+  }
+  if (source === "mixed") {
+    return <Badge variant="outline">Mixed pricing</Badge>
+  }
+  return <Badge variant="secondary">Fallback pricing</Badge>
+}
+
+function CostPanel({ cost, tier }: { cost?: Cost; tier?: string }) {
+  if (!cost) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <DollarSign className="h-5 w-5" />
+            Cost
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="py-12 text-center text-muted-foreground">
+          Cost data not available
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const totalTokens = (cost.total_input_tokens || 0) + (cost.total_output_tokens || 0)
+  const modelBreakdown = Object.entries(cost.model_breakdown || {}).sort(([, a], [, b]) => b - a)
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <DollarSign className="h-5 w-5" />
+              Cost Summary
+            </CardTitle>
+            <PricingSourceBadge source={cost.pricing_source} />
+          </div>
+          <CardDescription>Usage and estimated processing cost for this document</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg bg-muted p-4">
+              <div className="text-sm text-muted-foreground">Total Cost</div>
+              <div className="text-2xl font-bold">{formatUsd(cost.total_usd)}</div>
+            </div>
+            <div className="rounded-lg bg-muted p-4">
+              <div className="text-sm text-muted-foreground">Cost / Page</div>
+              <div className="text-2xl font-bold">{formatUsd(cost.usd_per_page)}</div>
+            </div>
+            <div className="rounded-lg bg-muted p-4">
+              <div className="text-sm text-muted-foreground">Input Tokens</div>
+              <div className="text-xl font-semibold">{formatNumber(cost.total_input_tokens)}</div>
+            </div>
+            <div className="rounded-lg bg-muted p-4">
+              <div className="text-sm text-muted-foreground">Output Tokens</div>
+              <div className="text-xl font-semibold">{formatNumber(cost.total_output_tokens)}</div>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Badge variant="outline" className="capitalize">Tier: {tier || "N/A"}</Badge>
+            <Badge variant="outline">{formatNumber(totalTokens)} total tokens</Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Per-Stage Breakdown</CardTitle>
+          <CardDescription>Model, token usage, and cost by pipeline stage</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {cost.per_stage?.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Model</TableHead>
+                  <TableHead className="text-right">Input</TableHead>
+                  <TableHead className="text-right">Output</TableHead>
+                  <TableHead className="text-right">Cost</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {cost.per_stage.map((stage, index) => (
+                  <TableRow key={`${stage.stage}-${stage.model}-${index}`}>
+                    <TableCell className="font-medium">{formatStageName(stage.stage)}</TableCell>
+                    <TableCell className="max-w-[180px] truncate" title={stage.model}>{stage.model}</TableCell>
+                    <TableCell className="text-right font-mono">{formatNumber(stage.input_tokens)}</TableCell>
+                    <TableCell className="text-right font-mono">{formatNumber(stage.output_tokens)}</TableCell>
+                    <TableCell className="text-right font-mono">{formatUsd(stage.usd)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="py-6 text-center text-muted-foreground">No stage-level cost data available</div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Model Breakdown</CardTitle>
+          <CardDescription>Cost contribution by model</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {modelBreakdown.length ? (
+            <div className="space-y-2">
+              {modelBreakdown.map(([model, usd]) => (
+                <div key={model} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                  <span className="text-sm font-medium truncate" title={model}>{model}</span>
+                  <span className="font-mono text-sm">{formatUsd(usd)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-6 text-center text-muted-foreground">No model breakdown available</div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 function ProcessingStep({ label, completed, hasError }: { label: string; completed: boolean; hasError?: boolean }) {
   return (
     <div className="flex flex-col items-center gap-2">
@@ -1231,8 +1406,8 @@ function ProcessingStep({ label, completed, hasError }: { label: string; complet
         )}
       </div>
       <span className={`text-xs font-medium ${
-        completed ? "text-green-600 dark:text-green-400" : 
-        hasError ? "text-red-600 dark:text-red-400" : 
+        completed ? "text-green-600 dark:text-green-400" :
+        hasError ? "text-red-600 dark:text-red-400" :
         "text-muted-foreground"
       }`}>
         {label}

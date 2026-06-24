@@ -1,0 +1,13 @@
+{
+  "models": {
+    "gpt-4.1": {"input_per_1k": 0.002, "output_per_1k": 0.008},
+    "gpt-4.1-mini": {"input_per_1k": 0.0004, "output_per_1k": 0.0016},
+    "gpt-4o": {"input_per_1k": 0.0025, "output_per_1k": 0.01},
+    "gpt-4o-mini": {"input_per_1k": 0.00015, "output_per_1k": 0.0006},
+    "text-embedding-3-large": {"input_per_1k": 0.00013, "output_per_1k": 0.0},
+    "default": {"input_per_1k": 0.002, "output_per_1k": 0.008}
+  },
+  "document_intelligence": {
+    "default_page": 0.0015
+  }
+}

@@ -155,6 +155,11 @@ async def process_file(request: Request, background_tasks: BackgroundTasks):
     return await api_routes.process_file(request, background_tasks)
 
 
+@app.post("/api/profiling/run")
+async def run_profiling(request: Request):
+    return await api_routes.run_profiling(request)
+
+
 # Configuration management endpoints
 @app.get("/api/configuration")
 async def get_configuration():
@@ -240,6 +245,21 @@ async def get_document_file(document_id: str):
 @app.get("/api/documents")
 async def list_documents(dataset: str = None):
     return await api_routes.list_documents(dataset)
+
+
+@app.get("/api/documents/flagged")
+async def list_flagged_documents():
+    return await api_routes.list_flagged_documents()
+
+
+@app.post("/api/documents/{document_id}/flag-email/generate")
+async def generate_flag_email(document_id: str, request: Request):
+    return await api_routes.generate_flag_email(document_id, request)
+
+
+@app.post("/api/flag-email/send")
+async def send_flag_email(request: Request):
+    return await api_routes.send_flag_email(request)
 
 
 @app.get("/api/documents/{document_id}")

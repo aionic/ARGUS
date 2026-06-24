@@ -134,6 +134,184 @@ Endpoint called by Azure Logic Apps to process uploaded files.
 
 ---
 
+## 🚩 Review & Cost Profiling Endpoints
+
+### GET `/api/documents/flagged`
+**List Flagged Documents**
+
+Returns lightweight records for documents where `properties.flag.flagged` is `true`.
+
+**Response:**
+```json
+[
+  {
+    "id": "default-dataset__invoice-001.pdf",
+    "dataset": "default-dataset",
+    "filename": "invoice-001.pdf",
+    "reasons": ["low_quality_pages=1/2 (fraction=0.50)"],
+    "stage": "quality",
+    "flagged_at": "2026-06-23T21:31:05Z",
+    "email_sent": false,
+    "image_quality_summary": "blur_score: 12.0; brightness: 240.0"
+  }
+]
+```
+
+**Error Response (503):**
+```json
+{
+  "detail": "Data container not available"
+}
+```
+
+### POST `/api/documents/{document_id}/flag-email/generate`
+**Generate Flagged-Document Email Draft**
+
+Uses the configured flag-email prompt template and the flagged document context to draft an editable email. The document must already be flagged.
+
+**Request Body:**
+```json
+{
+  "prompt_template": "Optional replacement template. Use {document_id}, {filename}, {reasons_text}, {image_quality_summary}, and related placeholders."
+}
+```
+
+If `prompt_template` is omitted, ARGUS uses `flag_email.prompt_template` from configuration, falling back to `DEFAULT_FLAG_EMAIL_PROMPT_TEMPLATE`.
+
+**Response:**
+```json
+{
+  "subject": "Action needed: re-upload flagged document invoice-001.pdf",
+  "body": "Hello,\n\nARGUS flagged the document for review because one page appears low quality..."
+}
+```
+
+**Error Responses:**
+```json
+{
+  "detail": "Document not found"
+}
+```
+
+```json
+{
+  "detail": "Document is not flagged"
+}
+```
+
+### POST `/api/flag-email/send`
+**Mock-Send Flagged-Document Email**
+
+**MOCK ONLY**: This endpoint does not deliver real email. It logs the intended send and persists send metadata under `properties.flag.email`.
+
+**Request Body:**
+```json
+{
+  "document_id": "default-dataset__invoice-001.pdf",
+  "to": "uploader@example.com",
+  "subject": "Action needed: re-upload flagged document invoice-001.pdf",
+  "body": "Hello,\n\nPlease re-scan and re-upload the flagged document."
+}
+```
+
+`to` is optional. If omitted, ARGUS uses uploader metadata from the document, then `flag_email.to_fallback`, then `FLAG_EMAIL_TO_FALLBACK`.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message_id": "mock-2d7d2f2d-5b1b-4f5d-a6e0-123456789abc",
+  "mock": true
+}
+```
+
+**Persisted Document Metadata:**
+```json
+{
+  "properties": {
+    "flag": {
+      "email": {
+        "sent_mock": true,
+        "to": "uploader@example.com",
+        "subject": "Action needed: re-upload flagged document invoice-001.pdf",
+        "body": "Hello,\n\nPlease re-scan and re-upload the flagged document.",
+        "sent_at": "2026-06-23T21:31:05Z",
+        "message_id": "mock-2d7d2f2d-5b1b-4f5d-a6e0-123456789abc"
+      }
+    }
+  }
+}
+```
+
+### POST `/api/profiling/run`
+**Run Cost Profiling Harness**
+
+Runs demo/sample documents through the selected extraction tiers and persists a Cosmos DB document with `type: "profiling_report"`.
+
+**Request Body:**
+```json
+{
+  "dataset": "default-dataset",
+  "files": ["invoice-001.pdf"],
+  "tiers": ["economy", "standard", "premium"]
+}
+```
+
+`dataset` defaults to `default-dataset`; `files` defaults to all supported documents under `demo\{dataset}`; `tiers` defaults to `economy`, `standard`, and `premium`.
+
+**Response:**
+```json
+{
+  "per_tier": {
+    "economy": {
+      "avg_usd_per_page": 0.0004,
+      "avg_tokens": 850.0,
+      "success_rate": 1.0,
+      "failure_types": {},
+      "quality_dist": {"ok": 1}
+    },
+    "standard": {
+      "avg_usd_per_page": 0.0012,
+      "avg_tokens": 1400.0,
+      "success_rate": 1.0,
+      "failure_types": {},
+      "quality_dist": {"ok": 1}
+    }
+  },
+  "runs": [
+    {
+      "dataset": "default-dataset",
+      "file": "invoice-001.pdf",
+      "document_id": "default-dataset__profiling__batch__economy__invoice-001.pdf",
+      "tier": "economy",
+      "success": true,
+      "total_usd": 0.0008,
+      "usd_per_page": 0.0004,
+      "total_input_tokens": 700,
+      "total_output_tokens": 150,
+      "total_tokens": 850,
+      "quality_bucket": "ok"
+    }
+  ],
+  "generated_at": "2026-06-23T21:31:05Z"
+}
+```
+
+**Error Responses:**
+```json
+{
+  "detail": "tiers must be a list of tier names"
+}
+```
+
+```json
+{
+  "detail": "Profiling document not found: D:\\Git\\ARGUS\\demo\\default-dataset\\missing.pdf"
+}
+```
+
+---
+
 ## ⚙️ Configuration Management
 
 ### GET `/api/configuration`
