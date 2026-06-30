@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from 'next/server'
 const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
 const API_KEY = process.env.BACKEND_API_KEY || ''
 
+// Never cache or statically optimize the proxy — required for streaming
+// responses such as the Server-Sent Events stream at /api/backend/api/events.
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+export const runtime = 'nodejs'
+
 /**
  * Catch-all proxy route that forwards requests to the backend with the API key.
  * Browser calls /api/backend/... → this route adds X-API-Key → forwards to backend.
@@ -35,6 +41,7 @@ async function proxyRequest(
   const fetchOptions: RequestInit = {
     method: request.method,
     headers,
+    cache: 'no-store',
   }
 
   // Forward body for methods that have one

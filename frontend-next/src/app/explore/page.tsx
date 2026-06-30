@@ -62,6 +62,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { backendClient, type Document, type Cost } from "@/lib/api-client"
 import { formatDate, formatDuration, formatBytes } from "@/lib/utils"
+import { useDocumentEvents, type DocumentEvent } from "@/hooks/use-document-events"
 import { DocumentDetailSheet } from "@/components/documents/document-detail-sheet"
 import { AnalyticsCharts } from "@/components/documents/analytics-charts"
 
@@ -244,6 +245,51 @@ export default function ExplorePage() {
   React.useEffect(() => {
     loadDocuments()
   }, [])
+
+  // --- Live updates via SSE (no polling) ------------------------------------
+  // Keep stable refs so the event handler can have empty deps.
+  const documentIdsRef = React.useRef<Set<string>>(new Set())
+  React.useEffect(() => {
+    documentIdsRef.current = new Set(documents.map((d) => d.id))
+  }, [documents])
+
+  const selectedIdRef = React.useRef<string | null>(null)
+  selectedIdRef.current = selectedDocument?.id ?? null
+
+  const loadDocumentsRef = React.useRef(loadDocuments)
+  loadDocumentsRef.current = loadDocuments
+
+  const reloadTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [sheetRefreshToken, setSheetRefreshToken] = React.useState(0)
+
+  const handleLiveEvent = React.useCallback((event: DocumentEvent) => {
+    const id = event?.id
+    if (!id) return
+    if (documentIdsRef.current.has(id)) {
+      // Known row: targeted single-document refetch + merge (cheap, authoritative).
+      void (async () => {
+        try {
+          const doc = await backendClient.getDocument(id)
+          const [refreshed] = parseDocuments([doc])
+          if (refreshed) {
+            setDocuments((prev) => prev.map((d) => (d.id === refreshed.id ? refreshed : d)))
+          }
+        } catch (error) {
+          console.error("Failed to patch document from live event:", error)
+        }
+      })()
+    } else {
+      // New document not yet in the grid: debounced full reload to pick it up.
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = setTimeout(() => loadDocumentsRef.current(), 600)
+    }
+    // If the detail sheet is open for this document, refresh it live too.
+    if (selectedIdRef.current === id) {
+      setSheetRefreshToken((n) => n + 1)
+    }
+  }, [])
+
+  const liveStatus = useDocumentEvents(handleLiveEvent)
 
   // Apply filters and sorting
   React.useEffect(() => {
@@ -491,6 +537,22 @@ export default function ExplorePage() {
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
+            <Badge
+              variant="outline"
+              className="gap-1.5"
+              title={
+                liveStatus === "open"
+                  ? "Live updates connected — the list refreshes automatically as documents are processed"
+                  : "Reconnecting to live updates…"
+              }
+            >
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  liveStatus === "open" ? "bg-green-500 animate-pulse" : "bg-yellow-500"
+                }`}
+              />
+              {liveStatus === "open" ? "Live" : "Connecting"}
+            </Badge>
           </div>
         </CardContent>
       </Card>
@@ -731,6 +793,7 @@ export default function ExplorePage() {
       {/* Document Detail Sheet */}
       <DocumentDetailSheet
         document={selectedDocument}
+        refreshSignal={sheetRefreshToken}
         onClose={() => setSelectedDocument(null)}
         onReprocess={(doc) => handleReprocess([doc])}
         onDelete={(doc) => {

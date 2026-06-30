@@ -3,18 +3,23 @@ ARGUS Container App - Main FastAPI Application
 Reorganized modular structure for better maintainability
 """
 
+import asyncio
+import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from sse_starlette.sse import EventSourceResponse
 from starlette.types import Receive, Scope, Send
 
 import api_routes
 from dependencies import cleanup_azure_clients, initialize_azure_clients
+from events_hub import hub as event_hub
 from mcp_server import mcp_server
 
 # Configure logging. App level defaults to INFO (override via LOG_LEVEL); the
@@ -62,6 +67,12 @@ async def lifespan(_app: FastAPI):  # noqa: ARG001
         logger.error("Failed to initialize Azure clients: %s", e)
         raise
 
+    # Start the per-replica Cosmos change-feed poller that powers SSE live updates.
+    try:
+        await event_hub.start()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Failed to start SSE change-feed poller: %s", e)
+
     # Initialize MCP session manager
     mcp_session_manager = StreamableHTTPSessionManager(
         app=mcp_server,
@@ -76,6 +87,7 @@ async def lifespan(_app: FastAPI):  # noqa: ARG001
         yield
 
     # Cleanup
+    await event_hub.stop()
     await cleanup_azure_clients()
     logger.info("Application shutdown complete")
 
@@ -137,6 +149,39 @@ async def root():
 @app.get("/health")
 async def health_check():
     return await api_routes.health_check()
+
+
+# Server-Sent Events: live document-update stream (no polling).
+# The Next.js proxy injects the X-API-Key header server-side, so the browser's
+# EventSource (which can't send custom headers) authenticates transparently.
+async def _event_stream(request: Request):
+    queue = await event_hub.subscribe()
+    try:
+        # Greet the client so it knows the stream is live even before any change.
+        yield {
+            "event": "ready",
+            "data": json.dumps({"ts": time.time()}),
+        }
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=15)
+            except asyncio.TimeoutError:
+                # No change in the window; loop so we can re-check disconnect.
+                # sse-starlette's ping keeps the connection warm meanwhile.
+                continue
+            yield {
+                "event": "document",
+                "data": json.dumps(event),
+            }
+    finally:
+        await event_hub.unsubscribe(queue)
+
+
+@app.get("/api/events")
+async def events(request: Request):
+    return EventSourceResponse(_event_stream(request), ping=15)
 
 
 # Blob processing endpoints

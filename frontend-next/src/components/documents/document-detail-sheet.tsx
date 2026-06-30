@@ -86,6 +86,8 @@ interface DocumentDetailSheetProps {
   onReprocess: (doc: ProcessedDocument) => void
   onDelete: (doc: ProcessedDocument) => void
   onRefresh?: () => void
+  /** Bumped by the parent (via SSE) to trigger a live refresh of the open doc. */
+  refreshSignal?: number
 }
 
 interface ChatMessage {
@@ -128,6 +130,7 @@ export function DocumentDetailSheet({
   onReprocess,
   onDelete,
   onRefresh,
+  refreshSignal,
 }: DocumentDetailSheetProps) {
   const [fullDocument, setFullDocument] = React.useState<Document | null>(null)
   const [isLoading, setIsLoading] = React.useState(false)
@@ -250,6 +253,20 @@ export function DocumentDetailSheet({
     }
     loadFileUrl()
   }, [document?.id])
+
+  // Live refresh: when the parent bumps refreshSignal (via SSE) for the open doc,
+  // silently reload its full data + corrections. Skips the initial mount value.
+  const lastRefreshSignalRef = React.useRef<number | undefined>(refreshSignal)
+  React.useEffect(() => {
+    if (refreshSignal === undefined) return
+    if (refreshSignal === lastRefreshSignalRef.current) return
+    lastRefreshSignalRef.current = refreshSignal
+    if (document?.id) {
+      loadFullDocument()
+      loadCorrections()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal])
 
   async function loadFullDocument() {
     if (!document) return

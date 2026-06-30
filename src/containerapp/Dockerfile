@@ -53,6 +53,7 @@ WORKDIR /app
 # Copy application code - modular structure
 COPY main.py .
 COPY models.py .
+COPY events_hub.py .
 COPY dependencies.py .
 COPY logic_app_manager.py .
 COPY blob_processing.py .
