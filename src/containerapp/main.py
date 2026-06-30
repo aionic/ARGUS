@@ -213,6 +213,17 @@ async def update_openai_settings(request: Request):
     return await api_routes.update_openai_settings(request)
 
 
+# Pricing settings (agreement discount off list + consumption-pricing flag)
+@app.get("/api/pricing-settings")
+async def get_pricing_settings():
+    return await api_routes.get_pricing_settings()
+
+
+@app.put("/api/pricing-settings")
+async def update_pricing_settings(request: Request):
+    return await api_routes.update_pricing_settings(request)
+
+
 # Chat endpoint
 @app.post("/api/chat")
 async def chat_with_document(request: Request):

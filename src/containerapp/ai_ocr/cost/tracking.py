@@ -66,8 +66,21 @@ class CostTracker:
             )
         )
 
-    def aggregate(self, num_pages: int) -> dict[str, Any]:
-        """Produce the Cost object contract consumed by pipeline integration."""
+    def aggregate(
+        self,
+        num_pages: int,
+        discount_pct: float = 0.0,
+        consumption_available: bool = False,
+    ) -> dict[str, Any]:
+        """Produce the Cost object contract consumed by pipeline integration.
+
+        ``total_usd`` reflects the **net** price the customer pays after applying an
+        agreement discount off Azure list price. ``list_total_usd`` always carries the
+        undiscounted Azure list price. With ``discount_pct == 0`` the two are equal, so
+        existing consumers see no behavioural change. ``consumption_available`` is a
+        passthrough flag surfaced in the UI to note Azure consumption (PAYG/commit)
+        pricing may further reduce this cost.
+        """
         grouped: dict[tuple[str, str], _CostEntry] = {}
         model_breakdown: dict[str, float] = {}
         total_input_tokens = 0
@@ -92,6 +105,9 @@ class CostTracker:
             sources.append(entry.source)
 
         page_count = int(num_pages or 0)
+        list_total_usd = total_usd
+        pct = max(0.0, min(float(discount_pct or 0.0), 100.0))
+        net_total_usd = list_total_usd * (1.0 - pct / 100.0)
         return {
             "per_stage": [
                 {
@@ -105,8 +121,12 @@ class CostTracker:
             ],
             "total_input_tokens": total_input_tokens,
             "total_output_tokens": total_output_tokens,
-            "total_usd": total_usd,
-            "usd_per_page": total_usd / page_count if page_count > 0 else 0.0,
+            "total_usd": net_total_usd,
+            "list_total_usd": list_total_usd,
+            "discount_pct": pct,
+            "consumption_available": bool(consumption_available),
+            "usd_per_page": net_total_usd / page_count if page_count > 0 else 0.0,
+            "list_usd_per_page": list_total_usd / page_count if page_count > 0 else 0.0,
             "pricing_source": _aggregate_source(sources),
             "model_breakdown": model_breakdown,
         }

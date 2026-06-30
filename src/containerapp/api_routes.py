@@ -728,6 +728,68 @@ async def update_openai_settings(request: Request):
         raise HTTPException(status_code=400, detail=f"Error updating settings: {str(e)}")
 
 
+def _default_pricing_settings() -> dict:
+    """Solution-wide pricing knobs with env-var fallbacks."""
+    discount = 0.0
+    raw = os.getenv("PRICING_DISCOUNT_PCT")
+    if raw:
+        try:
+            discount = float(raw)
+        except ValueError:
+            discount = 0.0
+    return {
+        "discount_pct": max(0.0, min(discount, 100.0)),
+        "consumption_available": os.getenv("PRICING_CONSUMPTION_AVAILABLE", "false").lower()
+        in ("1", "true", "yes"),
+    }
+
+
+async def get_pricing_settings():
+    """Get solution-wide pricing settings (agreement discount + consumption flag)."""
+    settings = _default_pricing_settings()
+    try:
+        conf_container = get_conf_container()
+        config_item = conf_container.read_item(item="configuration", partition_key="configuration")
+        pricing = config_item.get("pricing") or {}
+        if "discount_pct" in pricing:
+            settings["discount_pct"] = max(0.0, min(float(pricing.get("discount_pct") or 0.0), 100.0))
+        if "consumption_available" in pricing:
+            settings["consumption_available"] = bool(pricing.get("consumption_available"))
+    except Exception as e:  # noqa: BLE001 - best-effort; fall back to env defaults
+        logger.warning("Could not read pricing settings, using defaults: %s", e)
+    return settings
+
+
+async def update_pricing_settings(request: Request):
+    """Persist solution-wide pricing settings to the Cosmos configuration document."""
+    try:
+        data = await request.json()
+        conf_container = get_conf_container()
+        try:
+            config_item = conf_container.read_item(item="configuration", partition_key="configuration")
+        except Exception:
+            config_item = {"id": "configuration", "partitionKey": "configuration", "datasets": {}}
+
+        pricing = config_item.get("pricing") or {}
+        if "discount_pct" in data:
+            pricing["discount_pct"] = max(0.0, min(float(data.get("discount_pct") or 0.0), 100.0))
+        if "consumption_available" in data:
+            pricing["consumption_available"] = bool(data.get("consumption_available"))
+        config_item["pricing"] = pricing
+        config_item = _apply_flag_email_defaults(config_item)
+        conf_container.upsert_item(config_item)
+        return {
+            "message": "Pricing settings updated successfully",
+            "pricing": {
+                "discount_pct": pricing.get("discount_pct", 0.0),
+                "consumption_available": pricing.get("consumption_available", False),
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error updating pricing settings: {e}")
+        raise HTTPException(status_code=400, detail=f"Error updating pricing settings: {str(e)}")
+
+
 async def chat_with_document(request: Request):
     """
     Chat endpoint for asking questions about a specific document.

@@ -15,6 +15,7 @@ import {
   Terminal,
   Cloud,
   FileCode,
+  DollarSign,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -31,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import {
   Alert,
@@ -84,6 +86,12 @@ export default function SettingsPage() {
   const [isLoadingConcurrency, setIsLoadingConcurrency] = React.useState(true)
   const [isSavingConcurrency, setIsSavingConcurrency] = React.useState(false)
 
+  // Pricing Settings state (agreement discount + consumption availability)
+  const [discountPct, setDiscountPct] = React.useState(0)
+  const [consumptionAvailable, setConsumptionAvailable] = React.useState(false)
+  const [isLoadingPricing, setIsLoadingPricing] = React.useState(true)
+  const [isSavingPricing, setIsSavingPricing] = React.useState(false)
+
   // Health check status
   const [healthStatus, setHealthStatus] = React.useState<"connected" | "disconnected" | "checking">("checking")
 
@@ -107,6 +115,7 @@ export default function SettingsPage() {
     await Promise.all([
       loadOpenAISettings(),
       loadConcurrencySettings(),
+      loadPricingSettings(),
     ])
   }
 
@@ -198,6 +207,42 @@ export default function SettingsPage() {
       toast.error("Failed to update concurrency settings")
     } finally {
       setIsSavingConcurrency(false)
+    }
+  }
+
+  async function loadPricingSettings() {
+    setIsLoadingPricing(true)
+    try {
+      const settings = await backendClient.getPricingSettings()
+      setDiscountPct(settings.discount_pct ?? 0)
+      setConsumptionAvailable(settings.consumption_available ?? false)
+    } catch (error) {
+      console.error("Failed to load pricing settings:", error)
+      setDiscountPct(0)
+      setConsumptionAvailable(false)
+    } finally {
+      setIsLoadingPricing(false)
+    }
+  }
+
+  async function savePricingSettings() {
+    const clamped = Math.max(0, Math.min(100, Number.isFinite(discountPct) ? discountPct : 0))
+    setIsSavingPricing(true)
+    try {
+      await backendClient.updatePricingSettings({
+        discount_pct: clamped,
+        consumption_available: consumptionAvailable,
+      })
+      setDiscountPct(clamped)
+      toast.success("Pricing settings saved", {
+        description: `${clamped}% off list${consumptionAvailable ? " · consumption pricing flagged available" : ""}`,
+      })
+      loadPricingSettings()
+    } catch (error) {
+      console.error("Failed to save pricing settings:", error)
+      toast.error("Failed to save pricing settings")
+    } finally {
+      setIsSavingPricing(false)
     }
   }
 
@@ -499,6 +544,69 @@ export default function SettingsPage() {
                     <Save className="h-4 w-4 mr-2" />
                   )}
                   Update Concurrency
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Pricing Settings - agreement discount + consumption availability */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
+              <CardTitle>Pricing</CardTitle>
+            </div>
+            <CardDescription>
+              Apply your agreement discount off Azure list price and flag when consumption pricing is available. Affects cost figures shown across documents.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoadingPricing ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading pricing settings...
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="discount-pct">Discount off list (%)</Label>
+                  <Input
+                    id="discount-pct"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={discountPct}
+                    onChange={(e) => setDiscountPct(parseFloat(e.target.value) || 0)}
+                    className="max-w-[160px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    0 = full list price. Net cost = list × (1 − discount). Clamped to 0–100%.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="consumption-available">Consumption pricing available</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Surfaces a &quot;Consumption pricing available&quot; flag on document cost summaries.
+                    </p>
+                  </div>
+                  <Switch
+                    id="consumption-available"
+                    checked={consumptionAvailable}
+                    onCheckedChange={setConsumptionAvailable}
+                  />
+                </div>
+
+                <Button onClick={savePricingSettings} disabled={isSavingPricing}>
+                  {isSavingPricing ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Save Pricing
                 </Button>
               </div>
             )}

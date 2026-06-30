@@ -157,6 +157,91 @@ def _set_flag(document: dict, reasons: list[str], stage: str) -> None:
     }
 
 
+def _pricing_settings() -> dict:
+    """Solution-wide pricing knobs (agreement discount + consumption flag).
+
+    Read from the Cosmos ``configuration`` document (``pricing`` key, editable from
+    the Settings UI), falling back to env vars and then sane defaults. Failures are
+    non-fatal — pricing display simply defaults to full Azure list price.
+    """
+    discount = 0.0
+    consumption = os.getenv("PRICING_CONSUMPTION_AVAILABLE", "false").lower() in ("1", "true", "yes")
+    env_discount = os.getenv("PRICING_DISCOUNT_PCT")
+    if env_discount:
+        try:
+            discount = float(env_discount)
+        except ValueError:
+            discount = 0.0
+    try:
+        from dependencies import get_conf_container
+
+        conf_container = get_conf_container()
+        config_item = conf_container.read_item(item="configuration", partition_key="configuration")
+        pricing = config_item.get("pricing") or {}
+        if "discount_pct" in pricing:
+            discount = float(pricing.get("discount_pct") or 0.0)
+        if "consumption_available" in pricing:
+            consumption = bool(pricing.get("consumption_available"))
+    except Exception as exc:  # noqa: BLE001 - pricing config is best-effort
+        logger.debug("Pricing settings unavailable, using defaults: %s", exc)
+    return {
+        "discount_pct": max(0.0, min(discount, 100.0)),
+        "consumption_available": consumption,
+    }
+
+
+def _collect_confidences(value: Any, out: list[float]) -> None:
+    """Recursively collect numeric confidence values in [0, 1] from a CU result."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if 0.0 <= float(value) <= 1.0:
+            out.append(float(value))
+    elif isinstance(value, dict):
+        for key, sub in value.items():
+            if key in ("confidence", "score") and isinstance(sub, (int, float)):
+                _collect_confidences(sub, out)
+            else:
+                _collect_confidences(sub, out)
+    elif isinstance(value, (list, tuple)):
+        for sub in value:
+            _collect_confidences(sub, out)
+
+
+def _cu_mean_confidence(cu_confidence: dict) -> float | None:
+    """Mean of numeric CU confidence values across chunks, or None when absent."""
+    values: list[float] = []
+    _collect_confidences(cu_confidence, values)
+    if not values:
+        return None
+    return round(sum(values) / len(values), 4)
+
+
+def _cu_fallback_enabled(processing_options: dict) -> bool:
+    """Whether a low-quality CU result should silently fall back to the GPT path."""
+    if "cu_gpt_fallback" in processing_options:
+        return bool(processing_options.get("cu_gpt_fallback"))
+    return os.getenv("CU_GPT_FALLBACK", "true").lower() not in ("0", "false", "no")
+
+
+def _cu_confidence_threshold(processing_options: dict) -> float | None:
+    """Per-dataset estimated CU confidence floor below which we fall back to GPT.
+
+    Returns ``None`` when no explicit threshold is configured (the common case) so
+    that fallback is driven purely by the reliable DI word-confidence / preflight
+    quality flag rather than CU's own field confidence (which is inverted/unreliable
+    for sparse structured forms).
+    """
+    raw = processing_options.get("cu_confidence_threshold")
+    if raw is None:
+        raw = os.getenv("CU_CONFIDENCE_THRESHOLD")
+    if raw in (None, ""):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+
 def _ocr_confidence_thresholds() -> tuple[float, float, float]:
     """(word_min, mean_min, low_frac_max) for the OCR word-confidence gate (env-tunable)."""
 
@@ -521,6 +606,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
         tier_pinned = _has_pinned_tier(processing_options)
         eff = resolve_effective_config(processing_options.get("tier"), processing_options, os.environ)
         document["properties"]["tier"] = eff.tier
+        pricing = _pricing_settings()
 
         logger.info(
             f"Processing options: tier={eff.tier}, OCR={eff.enable_ocr}, "
@@ -549,8 +635,10 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             logger.info(f"Processing single file with {num_pages} pages (no chunking needed)")
 
         # Determine extraction backend: per-dataset override, else solution default.
+        # Content Understanding is the strict default; the GPT path is reached either by
+        # explicit override or as a silent fallback when CU output reads low-quality.
         extraction_backend = (
-            processing_options.get("extraction_backend") or os.getenv("EXTRACTION_BACKEND", "gpt")
+            processing_options.get("extraction_backend") or os.getenv("EXTRACTION_BACKEND", "content_understanding")
         ).lower()
 
         enable_evaluation = eff.enable_evaluation
@@ -566,6 +654,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
         extracted_data_list = []
         image_cache = {}
         image_quality_reports = []
+        cu_fallback = False  # set when a low-quality CU result silently falls back to GPT
 
         # ── PaddleOCR pre-gate (cheap legibility probe BEFORE paid DI/CU) ──────
         # Opt-in. On a bad verdict in `block` mode we short-circuit: skip the paid
@@ -596,7 +685,11 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             record_token_cost("evaluation", eff.extraction_model, None)
             record_token_cost("summary", eff.summary_model, None)
             record_page_cost("paddle_pregate", "paddleocr", document["properties"]["num_pages"], 0)
-            document["properties"]["cost"] = tracker.aggregate(document["properties"]["num_pages"])
+            document["properties"]["cost"] = tracker.aggregate(
+                document["properties"]["num_pages"],
+                discount_pct=pricing["discount_pct"],
+                consumption_available=pricing["consumption_available"],
+            )
             document["properties"]["tier"] = eff.tier
 
             update_state(document, data_container, "paddle_pregate_blocked", True, 0)
@@ -684,10 +777,55 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 _set_flag(document, ocr_conf_reasons, "quality")
 
             update_state(document, data_container, "ocr_completed", True, total_ocr_time)
+
+            # ── Silent CU -> GPT fallback decision ────────────────────────────
+            # If CU output reads low-quality (a reliable DI word-confidence / preflight
+            # flag was raised, or — when an explicit per-dataset threshold is set — CU's
+            # own mean field confidence is below it), silently re-run extraction on the
+            # richer GPT path. We estimate the quality bar per-dataset; recovery is
+            # silent so the user is not asked to review a doc we could recover.
+            cu_flag = document["properties"].get("flag") or {}
+            cu_mean_conf = _cu_mean_confidence(cu_confidence)
+            cu_threshold = _cu_confidence_threshold(processing_options)
+            low_cu_confidence = (
+                cu_mean_conf is not None and cu_threshold is not None and cu_mean_conf < cu_threshold
+            )
+            cu_fallback = _cu_fallback_enabled(processing_options) and (
+                bool(cu_flag.get("flagged")) or low_cu_confidence
+            )
+            if cu_fallback:
+                fallback_reasons = list(cu_flag.get("reasons") or [])
+                if low_cu_confidence:
+                    fallback_reasons.append(f"cu_mean_confidence {cu_mean_conf:.2f} < {cu_threshold:.2f}")
+                document["properties"]["cu_fallback"] = {
+                    "triggered": True,
+                    "reasons": fallback_reasons,
+                    "cu_mean_confidence": cu_mean_conf,
+                    "cu_confidence_threshold": cu_threshold,
+                    "pre_fallback_flag_stage": cu_flag.get("stage"),
+                    "triggered_at": datetime.now().isoformat(),
+                }
+                logger.info(
+                    "CU output low-quality for %s -> silent GPT fallback (reasons=%s)",
+                    blob_input_stream.name,
+                    fallback_reasons,
+                )
+                # Clear the CU review flag so recovery is silent, and reset the per-chunk
+                # accumulators so the GPT path rebuilds them cleanly. The GPT path re-runs
+                # the DI word-confidence preflight and only re-flags if the document is
+                # still genuinely illegible after the richer extraction.
+                document["properties"]["flag"] = None
+                extracted_data_list = []
+                image_cache = {}
+                image_quality_reports = []
+
             data_container.upsert_item(document)
-        else:
-            # ── GPT extraction backend (default) ──────────────────────────────
-            document["properties"]["extraction_backend_used"] = "gpt"
+
+        if extraction_backend != "content_understanding" or cu_fallback:
+            # ── GPT extraction backend (explicit default or silent CU fallback) ──
+            document["properties"]["extraction_backend_used"] = (
+                "content_understanding+gpt" if cu_fallback else "gpt"
+            )
 
             # Step 1: Run OCR for all files (conditional - only if OCR text will be used)
             ocr_results = []
@@ -945,7 +1083,11 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             record_token_cost("evaluation", eff.extraction_model, None)
         if "summary" not in cost_stages:
             record_token_cost("summary", eff.summary_model, None)
-        document["properties"]["cost"] = tracker.aggregate(num_pages or document["properties"].get("num_pages", 0))
+        document["properties"]["cost"] = tracker.aggregate(
+            num_pages or document["properties"].get("num_pages", 0),
+            discount_pct=pricing["discount_pct"],
+            consumption_available=pricing["consumption_available"],
+        )
         document["properties"]["tier"] = eff.tier
 
         update_final_document(
@@ -963,7 +1105,12 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
         logger.error(f"Processing error in process_blob: {str(e)}")
         document["errors"].append(f"Processing error: {str(e)}")
         document["state"]["processing_completed"] = False
-        document["properties"]["cost"] = tracker.aggregate(num_pages or document["properties"].get("num_pages", 0))
+        _pricing = locals().get("pricing") or {"discount_pct": 0.0, "consumption_available": False}
+        document["properties"]["cost"] = tracker.aggregate(
+            num_pages or document["properties"].get("num_pages", 0),
+            discount_pct=_pricing["discount_pct"],
+            consumption_available=_pricing["consumption_available"],
+        )
 
         # Mark incomplete steps as failed
         if processing_options.get("include_ocr", True) and "ocr_processing_time" not in processing_times:

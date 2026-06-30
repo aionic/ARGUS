@@ -6,9 +6,14 @@
 
 // Document types
 export type Tier = "economy" | "standard" | "premium"
-export type CostStage = "ocr" | "extraction" | "evaluation" | "summary" | "content_understanding"
+export type CostStage = "ocr" | "extraction" | "evaluation" | "summary" | "content_understanding" | "paddle_pregate"
 export type PricingSource = "azure_retail" | "fallback" | "mixed"
 export type FlagStage = "preflight" | "quality"
+export type ExtractionBackend =
+  | "content_understanding"
+  | "gpt"
+  | "content_understanding+gpt"
+  | "skipped_paddle_pregate"
 
 export interface CostStageUsage {
   stage: CostStage
@@ -26,10 +31,21 @@ export interface Cost {
   usd_per_page: number
   pricing_source: PricingSource
   model_breakdown: Record<string, number>
+  // Pricing UX: list (undiscounted Azure) price + applied agreement discount.
+  // Older documents may omit these — `total_usd` then equals list price.
+  list_total_usd?: number
+  list_usd_per_page?: number
+  discount_pct?: number
+  consumption_available?: boolean
 }
 
 export type CostObject = Cost
 export type DocumentCost = Cost
+
+export interface PricingSettings {
+  discount_pct: number
+  consumption_available: boolean
+}
 
 export interface EffectiveConfig {
   tier: Tier
@@ -120,6 +136,15 @@ export interface DocumentState {
   error?: boolean
 }
 
+export interface CuFallback {
+  triggered: boolean
+  reasons?: string[]
+  cu_mean_confidence?: number | null
+  cu_confidence_threshold?: number | null
+  pre_fallback_flag_stage?: string | null
+  triggered_at?: string
+}
+
 export interface DocumentProperties {
   blob_name?: string
   blob_size?: number
@@ -130,6 +155,8 @@ export interface DocumentProperties {
   total_time_seconds?: number
   cost?: Cost
   flag?: Flag
+  extraction_backend_used?: ExtractionBackend
+  cu_fallback?: CuFallback
 }
 
 export interface DocumentExtractedData {
@@ -579,6 +606,19 @@ class BackendClient {
 
   async getConcurrencyDiagnostics(): Promise<Record<string, unknown>> {
     return this.fetch<Record<string, unknown>>("/api/concurrency/diagnostics")
+  }
+
+  async getPricingSettings(): Promise<PricingSettings> {
+    return this.fetch<PricingSettings>("/api/pricing-settings")
+  }
+
+  async updatePricingSettings(
+    settings: Partial<PricingSettings>
+  ): Promise<{ message: string; pricing: PricingSettings }> {
+    return this.fetch<{ message: string; pricing: PricingSettings }>("/api/pricing-settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    })
   }
 
   // Upload endpoints

@@ -55,7 +55,7 @@ import {
 } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { backendClient, type Document, type Cost } from "@/lib/api-client"
+import { backendClient, type Document, type Cost, type ExtractionBackend, type CuFallback } from "@/lib/api-client"
 import { formatDate, formatDuration, formatBytes } from "@/lib/utils"
 
 interface ProcessedDocument {
@@ -338,6 +338,8 @@ export function DocumentDetailSheet({
   const typedProperties = fullDocument?.properties as (NonNullable<Document["properties"]> & { tier?: string }) | undefined
   const processingOptions = fullDocument?.processing_options as Record<string, unknown> | undefined
   const documentCost = typedProperties?.cost ?? document?.cost
+  const extractionBackendUsed = typedProperties?.extraction_backend_used
+  const cuFallback = typedProperties?.cu_fallback
   const tierUsed = typedProperties?.tier
     ?? (typeof processingOptions?.tier === "string" ? processingOptions.tier : undefined)
     ?? document?.tier
@@ -1070,7 +1072,12 @@ export function DocumentDetailSheet({
 
                     {/* Cost Tab */}
                     <TabsContent value="cost" className="absolute inset-0 m-0 p-4 overflow-auto data-[state=inactive]:hidden">
-                      <CostPanel cost={documentCost} tier={tierUsed} />
+                      <CostPanel
+                        cost={documentCost}
+                        tier={tierUsed}
+                        backend={extractionBackendUsed}
+                        cuFallback={cuFallback}
+                      />
                     </TabsContent>
 
                     {/* Chat Tab */}
@@ -1267,7 +1274,31 @@ function PricingSourceBadge({ source }: { source: Cost["pricing_source"] }) {
   return <Badge variant="secondary">Fallback pricing</Badge>
 }
 
-function CostPanel({ cost, tier }: { cost?: Cost; tier?: string }) {
+function ExtractionLineageBadge({ backend }: { backend?: ExtractionBackend }) {
+  if (!backend) return null
+  if (backend === "content_understanding") {
+    return <Badge className="bg-sky-500 hover:bg-sky-500">Content Understanding</Badge>
+  }
+  if (backend === "content_understanding+gpt") {
+    return <Badge className="bg-amber-500 hover:bg-amber-500">CU + GPT fallback</Badge>
+  }
+  if (backend === "skipped_paddle_pregate") {
+    return <Badge variant="secondary">Skipped (Paddle pre-gate)</Badge>
+  }
+  return <Badge variant="outline">GPT</Badge>
+}
+
+function CostPanel({
+  cost,
+  tier,
+  backend,
+  cuFallback,
+}: {
+  cost?: Cost
+  tier?: string
+  backend?: ExtractionBackend
+  cuFallback?: CuFallback
+}) {
   if (!cost) {
     return (
       <Card>
@@ -1286,6 +1317,10 @@ function CostPanel({ cost, tier }: { cost?: Cost; tier?: string }) {
 
   const totalTokens = (cost.total_input_tokens || 0) + (cost.total_output_tokens || 0)
   const modelBreakdown = Object.entries(cost.model_breakdown || {}).sort(([, a], [, b]) => b - a)
+  const discountPct = cost.discount_pct ?? 0
+  const hasDiscount = discountPct > 0 && cost.list_total_usd != null
+  const consumptionAvailable = cost.consumption_available === true
+  const fallbackReasons = cuFallback?.reasons?.filter(Boolean) ?? []
 
   return (
     <div className="space-y-4">
@@ -1296,19 +1331,34 @@ function CostPanel({ cost, tier }: { cost?: Cost; tier?: string }) {
               <DollarSign className="h-5 w-5" />
               Cost Summary
             </CardTitle>
-            <PricingSourceBadge source={cost.pricing_source} />
+            <div className="flex flex-wrap items-center gap-2">
+              <ExtractionLineageBadge backend={backend} />
+              <PricingSourceBadge source={cost.pricing_source} />
+            </div>
           </div>
           <CardDescription>Usage and estimated processing cost for this document</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-lg bg-muted p-4">
-              <div className="text-sm text-muted-foreground">Total Cost</div>
+              <div className="text-sm text-muted-foreground">
+                {hasDiscount ? `Net Cost (${discountPct}% off)` : "Total Cost"}
+              </div>
               <div className="text-2xl font-bold">{formatUsd(cost.total_usd)}</div>
+              {hasDiscount && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  List <span className="line-through">{formatUsd(cost.list_total_usd)}</span>
+                </div>
+              )}
             </div>
             <div className="rounded-lg bg-muted p-4">
               <div className="text-sm text-muted-foreground">Cost / Page</div>
               <div className="text-2xl font-bold">{formatUsd(cost.usd_per_page)}</div>
+              {hasDiscount && cost.list_usd_per_page != null && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  List <span className="line-through">{formatUsd(cost.list_usd_per_page)}</span>
+                </div>
+              )}
             </div>
             <div className="rounded-lg bg-muted p-4">
               <div className="text-sm text-muted-foreground">Input Tokens</div>
@@ -1322,7 +1372,23 @@ function CostPanel({ cost, tier }: { cost?: Cost; tier?: string }) {
           <div className="mt-4 flex flex-wrap gap-2">
             <Badge variant="outline" className="capitalize">Tier: {tier || "N/A"}</Badge>
             <Badge variant="outline">{formatNumber(totalTokens)} total tokens</Badge>
+            {consumptionAvailable && (
+              <Badge className="bg-emerald-500 hover:bg-emerald-500">Consumption pricing available</Badge>
+            )}
           </div>
+          {backend === "content_understanding+gpt" && (
+            <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              <div className="font-medium text-amber-700 dark:text-amber-400">
+                Content Understanding fell back to GPT
+              </div>
+              <div className="text-muted-foreground mt-1">
+                Low-confidence CU output triggered a silent GPT re-extraction. Cost reflects both passes.
+                {fallbackReasons.length > 0 && (
+                  <span> Reasons: {fallbackReasons.join(", ")}.</span>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
