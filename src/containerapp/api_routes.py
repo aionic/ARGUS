@@ -33,26 +33,20 @@ from ai_ocr.process import connect_to_cosmos, fetch_model_prompt_and_schema
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_FLAG_EMAIL_PROMPT_TEMPLATE = """You are drafting a courteous email to the original uploader of a document that ARGUS flagged for review.
+DEFAULT_FLAG_EMAIL_PROMPT_TEMPLATE = """You are drafting a courteous email to the original uploader of a document that was flagged for review. The uploader is a business user, not a technical specialist.
 
 Document context:
-- Document ID: {document_id}
-- Dataset: {dataset}
 - Filename: {filename}
-- Flag stage: {stage}
-- Flagged at: {flagged_at}
-- Flag reasons:
+- Why it was flagged (written in plain business language):
 {reasons_text}
-- Image quality summary: {image_quality_summary}
-- Image quality metrics:
-{quality_metrics}
+- Additional quality notes: {image_quality_summary}
 
-Write a concise, professional email that explains why the document was flagged and proposes concrete next steps:
-1. Re-scan at a higher DPI.
-2. Ensure good lighting and a flat page.
-3. Re-upload the corrected document.
+Write a warm, concise, professional email that:
+1. Briefly thanks the uploader and explains, in plain everyday language, that the document could not be processed reliably.
+2. Summarizes the issue(s) using the plain-language reasons above. Do NOT use internal codes, field names, jargon, raw metric values, or thresholds (for example, never write tokens like "low_ocr_confidence", "laplacian", or "< 0.60"). Translate everything into language a non-technical business user understands.
+3. Proposes concrete, friendly next steps, such as: re-scan the document at a higher quality/resolution, ensure good lighting with the page laid flat, then re-upload the corrected file.
 
-Return only JSON with string fields "subject" and "body"."""
+Keep the tone helpful and reassuring, not blaming. Return only JSON with string fields "subject" and "body"."""
 DEFAULT_FLAG_EMAIL_FROM = "noreply@argus.example"
 DEFAULT_FLAG_EMAIL_TO_FALLBACK = "uploader@argus.example"
 
@@ -168,12 +162,82 @@ def _document_is_flagged(document: dict) -> bool:
     return flag.get("flagged") is True
 
 
+# Maps the raw, technical flag-reason tokens emitted by the processing pipeline
+# (e.g. "low_ocr_confidence (mean 0.42 < 0.60)") to plain-English explanations a
+# non-technical business user can understand. Keys are matched against the leading
+# token of each reason (the part before any "(" or "="), longest/most-specific first.
+_REASON_HUMANIZERS: dict[str, str] = {
+    "low_ocr_confidence": (
+        "The quality of the text recognition (OCR) was low - the system was unsure about "
+        "many of the words it read from the scan, so the extracted information may be unreliable."
+    ),
+    "high_low_confidence_word_fraction": (
+        "A large portion of the words on the page were read with low confidence, "
+        "which usually means the scan is faint, blurry, or hard to read."
+    ),
+    "cu_mean_confidence": (
+        "The automated reading service returned low overall confidence for this document, "
+        "indicating the page was difficult to interpret reliably."
+    ),
+    "paddle_low_confidence": ("An initial quality check found that the scanned text was faint or hard to read."),
+    "paddle_high_low_confidence_fraction": (
+        "An initial quality check found that many lines on the page were difficult to read."
+    ),
+    "low_quality_pages": ("One or more pages were assessed as poor scan quality and could not be read reliably."),
+    "low_quality": "One or more pages were assessed as poor scan quality.",
+    "blurry": "The scan appears blurry or out of focus, making the text hard to read.",
+    "too dark": "The scan is too dark, which makes the text difficult to read.",
+    "too bright/washed out": ("The scan looks overexposed or washed out, so the text does not stand out clearly."),
+    "low contrast": ("The scan has low contrast, so the text does not stand out clearly from the background."),
+    "blank page": "One or more pages appear to be blank.",
+    "low resolution": (
+        "The scan resolution is too low to read reliably - a higher-quality (higher-DPI) scan is needed."
+    ),
+    "failed to load image": "The document image could not be opened for a quality check.",
+    "quality assessment failed": ("The automated quality check could not be completed for this document."),
+    "ocr_text_unreadable_or_empty": ("Very little or no readable text could be extracted from the document."),
+    "rules_all_required_fields_filled": ("The document was routed for a manual review based on business rules."),
+}
+
+
+def _humanize_reason(reason: str) -> str:
+    """Translate a single raw flag-reason token into plain business language."""
+    text = str(reason).strip()
+    if not text:
+        return text
+    # The token is the part before any parenthetical detail or metric comparison.
+    token = text.split("(", 1)[0].split("=", 1)[0].strip().lower()
+    if token in _REASON_HUMANIZERS:
+        return _REASON_HUMANIZERS[token]
+    # Fall back to a prefix match (longest key first) for tokens that carry suffixes.
+    for key in sorted(_REASON_HUMANIZERS, key=len, reverse=True):
+        if token.startswith(key):
+            return _REASON_HUMANIZERS[key]
+    # Unknown reason: clean it up (drop technical detail, de-snake-case) so the email
+    # never surfaces a raw internal code.
+    cleaned = token.replace("_", " ").strip()
+    return cleaned[:1].upper() + cleaned[1:] if cleaned else text
+
+
+def _humanize_reasons(reasons: list[str]) -> list[str]:
+    """Humanize a list of reasons, de-duplicating any that collapse to the same text."""
+    seen: set[str] = set()
+    humanized: list[str] = []
+    for reason in reasons:
+        friendly = _humanize_reason(reason)
+        if friendly and friendly not in seen:
+            seen.add(friendly)
+            humanized.append(friendly)
+    return humanized
+
+
 def _build_flag_email_context(document: dict) -> dict:
     properties = document.get("properties") or {}
     flag = properties.get("flag") or {}
     reasons = _as_reason_list(flag.get("reasons"))
+    friendly_reasons = _humanize_reasons(reasons)
     image_quality = properties.get("image_quality")
-    image_quality_summary = _summarize_image_quality(image_quality) or "No image-quality metrics recorded."
+    image_quality_summary = _summarize_image_quality(image_quality) or "No additional quality notes were recorded."
 
     return {
         "document_id": document.get("id", ""),
@@ -181,8 +245,12 @@ def _build_flag_email_context(document: dict) -> dict:
         "filename": _get_document_filename(document),
         "stage": flag.get("stage", ""),
         "flagged_at": flag.get("flagged_at", ""),
-        "reasons": ", ".join(reasons) if reasons else "No reasons recorded.",
-        "reasons_text": "\n".join(f"- {reason}" for reason in reasons) if reasons else "- No reasons recorded.",
+        "reasons": "; ".join(friendly_reasons) if friendly_reasons else "No specific reasons were recorded.",
+        "reasons_text": (
+            "\n".join(f"- {reason}" for reason in friendly_reasons)
+            if friendly_reasons
+            else "- No specific reasons were recorded."
+        ),
         "image_quality_summary": image_quality_summary,
         "quality_metrics": json.dumps(image_quality or {}, indent=2, default=str),
     }
@@ -224,12 +292,14 @@ def _fallback_email_body(document: dict) -> str:
     context = _build_flag_email_context(document)
     return (
         "Hello,\n\n"
-        f'ARGUS flagged the document "{context["filename"]}" for review.\n\n'
-        f"Reasons:\n{context['reasons_text']}\n\n"
-        f"Image quality notes: {context['image_quality_summary']}\n\n"
-        "Please re-scan the document at a higher DPI, ensure the page is flat with good lighting, "
-        "and re-upload the corrected file.\n\n"
-        "Thank you."
+        f'Thank you for uploading "{context["filename"]}". Unfortunately, we were unable to '
+        "process it reliably because the quality of the scan was too low for the following reasons:\n\n"
+        f"{context['reasons_text']}\n\n"
+        "To help us process your document, please:\n"
+        "- Re-scan it at a higher quality/resolution (a higher DPI setting).\n"
+        "- Make sure the page is laid flat with good, even lighting.\n"
+        "- Re-upload the corrected file.\n\n"
+        "Once you re-upload, we'll take another look right away. Thank you for your help!"
     )
 
 
@@ -739,8 +809,7 @@ def _default_pricing_settings() -> dict:
             discount = 0.0
     return {
         "discount_pct": max(0.0, min(discount, 100.0)),
-        "consumption_available": os.getenv("PRICING_CONSUMPTION_AVAILABLE", "false").lower()
-        in ("1", "true", "yes"),
+        "consumption_available": os.getenv("PRICING_CONSUMPTION_AVAILABLE", "false").lower() in ("1", "true", "yes"),
     }
 
 

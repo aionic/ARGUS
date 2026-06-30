@@ -45,7 +45,11 @@ import {
 } from "@/lib/api-client"
 import { formatDate } from "@/lib/utils"
 
-const DEFAULT_PROMPT_TEMPLATE = `Draft a concise, professional email to the document uploader explaining that the document was flagged during ARGUS review. Include the document name, dataset, review stage, and flagged reasons. Ask the uploader to review the issue and resubmit or provide clarification. Keep the tone helpful and action-oriented.`
+const DEFAULT_PROMPT_TEMPLATE = `Draft a warm, concise, professional email to the document uploader, who is a business user (not a technical specialist). Explain in plain, everyday language that we were unable to process their document reliably.
+
+Summarize the issue(s) using the plain-language reasons provided in the document context. Do NOT use internal codes, field names, technical jargon, raw metric values, or thresholds (for example, never write tokens like "low_ocr_confidence", "laplacian", or "< 0.60") - translate everything into language a non-technical business user understands.
+
+Then propose friendly, concrete next steps: re-scan the document at a higher quality/resolution, ensure good lighting with the page laid flat, and re-upload the corrected file. Keep the tone helpful and reassuring, not blaming.`
 const DEFAULT_TO_ADDRESS = "uploader@example.com"
 
 type ComposerProps = {
