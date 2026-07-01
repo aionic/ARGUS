@@ -9,5 +9,11 @@
   },
   "document_intelligence": {
     "default_page": 0.0015
+  },
+  "content_understanding": {
+    "minimal_per_page": 0.001,
+    "basic_per_page": 0.0015,
+    "standard_per_page": 0.005,
+    "contextualization_per_1k_tokens": 0.001
   }
 }

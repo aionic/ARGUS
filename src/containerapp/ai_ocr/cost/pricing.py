@@ -54,6 +54,41 @@ class PagePriceResult:
     source: PriceSource
 
 
+@dataclass(frozen=True)
+class CuPricing:
+    """Azure Content Understanding meter prices.
+
+    Content Understanding bills per *content extraction* meter tier plus a fixed
+    *contextualization* token charge (see
+    https://learn.microsoft.com/azure/ai-services/content-understanding/pricing-explainer).
+    The generative LLM tokens are billed separately on the Foundry model
+    deployment and are priced via :func:`get_pricing`.
+
+    Meter tiers (per page):
+      * ``minimal``  - digital documents (DOCX/XLSX/HTML/TXT/MSG/EML), no OCR
+      * ``basic``    - image-based documents, OCR only (read)
+      * ``standard`` - image-based documents, layout analysis (tables/structure)
+
+    ``contextualization_per_1k`` is USD per 1K contextualization tokens (docs
+    quote ~1,000 tokens/page at $1 per 1M tokens => $0.001 per 1K).
+    """
+
+    region: str
+    minimal_per_page: float
+    basic_per_page: float
+    standard_per_page: float
+    contextualization_per_1k: float
+    source: PriceSource
+
+    def page_price(self, meter: str) -> float:
+        """Return the USD/page rate for a meter tier name."""
+        return {
+            "minimal": self.minimal_per_page,
+            "basic": self.basic_per_page,
+            "standard": self.standard_per_page,
+        }.get((meter or "").strip().lower(), self.standard_per_page)
+
+
 _PRICE_CACHE: dict[tuple[str, str], tuple[datetime, PricingResult]] = {}
 _DI_CACHE: dict[str, tuple[datetime, PagePriceResult]] = {}
 _FALLBACK: Optional[dict[str, Any]] = None
@@ -145,6 +180,51 @@ def get_di_page_pricing(region: str, container: Any | None = None) -> PagePriceR
     _DI_CACHE[region_key] = (datetime.now(UTC), result)
     _write_cosmos_di(container, _di_doc_id(region_key), result)
     return result
+
+
+def get_cu_pricing(region: str, container: Any | None = None) -> CuPricing:
+    """Return Azure Content Understanding meter prices for ``region``.
+
+    Content Understanding page meters are not reliably exposed by the Azure
+    Retail Prices API, so this resolves from environment overrides first, then
+    the bundled fallback table. Environment overrides (USD):
+
+      * ``CONTENT_UNDERSTANDING_MINIMAL_PRICE_USD``   - per page (minimal meter)
+      * ``CONTENT_UNDERSTANDING_BASIC_PRICE_USD``     - per page (basic meter)
+      * ``CONTENT_UNDERSTANDING_STANDARD_PRICE_USD``  - per page (standard meter)
+      * ``CONTENT_UNDERSTANDING_CONTEXTUALIZATION_PRICE_USD_PER_1K`` - per 1K tokens
+
+    ``container`` is accepted for signature parity with the other pricing
+    resolvers but is unused (the values are static/env-driven).
+    """
+    _ = container
+    region_key = _normalize_region(region)
+    fallback = _load_fallback().get("content_understanding", {})
+    minimal = _env_price("CONTENT_UNDERSTANDING_MINIMAL_PRICE_USD", fallback.get("minimal_per_page", 0.001))
+    basic = _env_price("CONTENT_UNDERSTANDING_BASIC_PRICE_USD", fallback.get("basic_per_page", 0.0015))
+    standard = _env_price("CONTENT_UNDERSTANDING_STANDARD_PRICE_USD", fallback.get("standard_per_page", 0.005))
+    contextualization = _env_price(
+        "CONTENT_UNDERSTANDING_CONTEXTUALIZATION_PRICE_USD_PER_1K",
+        fallback.get("contextualization_per_1k_tokens", 0.001),
+    )
+    return CuPricing(
+        region=region_key,
+        minimal_per_page=minimal,
+        basic_per_page=basic,
+        standard_per_page=standard,
+        contextualization_per_1k=contextualization,
+        source="fallback",
+    )
+
+
+def _env_price(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return float(default)
 
 
 def _fetch_retail_items(filter_expr: str, timeout: float = 15.0) -> list[dict[str, Any]]:

@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
-from .pricing import PricingResult, get_pricing
+from .pricing import CuPricing, PricingResult, get_cu_pricing, get_pricing
 
 PricingSource = Literal["azure_retail", "fallback", "mixed"]
 PriceFunction = Callable[..., PricingResult | dict[str, Any]]
+
+_CU_METERS = ("minimal", "basic", "standard")
 
 
 @dataclass
@@ -65,6 +67,87 @@ class CostTracker:
                 source="fallback",
             )
         )
+
+    def record_cu_usage(
+        self,
+        usage: dict[str, Any] | None,
+        *,
+        stage: str = "content_understanding",
+        extraction_model: str = "content-understanding",
+        cu_pricing: CuPricing | None = None,
+    ) -> dict[str, Any]:
+        """Record meter-accurate Content Understanding cost from a CU ``usage`` block.
+
+        The CU ``:analyze`` response reports a ``usage`` object describing exactly
+        which content-extraction meter tier each page hit
+        (``documentPagesMinimal`` / ``Basic`` / ``Standard``), how many
+        ``contextualizationToken`` were consumed, and the generative LLM
+        ``tokens`` (billed on the linked Foundry deployment). This prices each
+        component per the Content Understanding pricing model:
+
+          * content extraction: pages x per-meter rate
+          * contextualization:  tokens / 1K x contextualization rate
+          * generative LLM:      input/output tokens priced via :func:`get_pricing`
+
+        Extraction + contextualization are recorded under ``stage`` (default
+        ``content_understanding``); LLM tokens are recorded under
+        ``"<stage>_llm"`` with the real model name so per-stage token costs stay
+        visible. Returns a structured breakdown (meter tier, page/token counts,
+        component USD, effective rates) for logging and telemetry.
+        """
+        usage = usage or {}
+        pricing = cu_pricing or get_cu_pricing(self.region, self.pricing_container)
+
+        pages = {meter: _usage_int(usage, f"documentPages{meter.capitalize()}") for meter in _CU_METERS}
+        contextualization_tokens = _usage_int(usage, "contextualizationToken") or _usage_int(
+            usage, "contextualizationTokens"
+        )
+
+        extraction_usd = sum(count * pricing.page_price(meter) for meter, count in pages.items())
+        contextualization_usd = contextualization_tokens / 1000 * pricing.contextualization_per_1k
+        cu_usd = extraction_usd + contextualization_usd
+
+        total_pages = sum(pages.values())
+        if total_pages or contextualization_tokens:
+            self._entries.append(
+                _CostEntry(
+                    stage=stage,
+                    model=extraction_model,
+                    input_tokens=0,
+                    output_tokens=0,
+                    usd=cu_usd,
+                    source=pricing.source,
+                )
+            )
+
+        llm_tokens = _parse_llm_tokens(usage.get("tokens"))
+        llm_usd = 0.0
+        for model, io in llm_tokens.items():
+            self.record(f"{stage}_llm", model, io["input"], io["output"])
+            llm_usd += self._entries[-1].usd
+
+        # Highest tier actually exercised describes the "level" of CU used.
+        meter = next((tier for tier in reversed(_CU_METERS) if pages.get(tier)), None)
+
+        return {
+            "meter": meter,
+            "pages": {f"{meter}": count for meter, count in pages.items()},
+            "total_pages": total_pages,
+            "contextualization_tokens": contextualization_tokens,
+            "llm_tokens": llm_tokens,
+            "extraction_usd": extraction_usd,
+            "contextualization_usd": contextualization_usd,
+            "llm_usd": llm_usd,
+            "cu_usd": cu_usd,
+            "total_usd": cu_usd + llm_usd,
+            "pricing_source": pricing.source,
+            "rates": {
+                "minimal_per_page": pricing.minimal_per_page,
+                "basic_per_page": pricing.basic_per_page,
+                "standard_per_page": pricing.standard_per_page,
+                "contextualization_per_1k": pricing.contextualization_per_1k,
+            },
+        }
 
     def aggregate(
         self,
@@ -160,3 +243,37 @@ def _aggregate_source(sources: list[str]) -> PricingSource:
 
 def _combine_sources(first: str, second: str) -> str:
     return first if first == second else "mixed"
+
+
+def _usage_int(usage: dict[str, Any], key: str) -> int:
+    try:
+        return int(usage.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_llm_tokens(tokens: Any) -> dict[str, dict[str, int]]:
+    """Parse a CU ``usage.tokens`` map into ``{model: {input, output}}``.
+
+    CU reports generative token usage with keys like ``"gpt-4.1-input"`` and
+    ``"gpt-4.1-output"``. Unknown suffixes are ignored so a schema change never
+    breaks cost tracking.
+    """
+    result: dict[str, dict[str, int]] = {}
+    if not isinstance(tokens, dict):
+        return result
+    for raw_key, raw_value in tokens.items():
+        key = str(raw_key)
+        if key.endswith("-input"):
+            model, direction = key[: -len("-input")], "input"
+        elif key.endswith("-output"):
+            model, direction = key[: -len("-output")], "output"
+        else:
+            continue
+        try:
+            value = int(raw_value or 0)
+        except (TypeError, ValueError):
+            value = 0
+        entry = result.setdefault(model, {"input": 0, "output": 0})
+        entry[direction] += value
+    return result

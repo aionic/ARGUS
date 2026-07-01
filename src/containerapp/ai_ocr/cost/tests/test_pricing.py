@@ -67,3 +67,29 @@ def test_parse_retail_di_price_normalizes_pages() -> None:
     parsed = pricing._parse_di_page_price_from_items(payload["Items"])
 
     assert parsed == pytest.approx(0.0015)
+
+
+def test_get_cu_pricing_uses_fallback_defaults() -> None:
+    result = pricing.get_cu_pricing("East US")
+
+    assert result.region == "eastus"
+    assert result.minimal_per_page == pytest.approx(0.001)
+    assert result.basic_per_page == pytest.approx(0.0015)
+    assert result.standard_per_page == pytest.approx(0.005)
+    assert result.contextualization_per_1k == pytest.approx(0.001)
+    assert result.source == "fallback"
+    # page_price() maps meter tier names, defaulting to standard for unknowns.
+    assert result.page_price("basic") == pytest.approx(0.0015)
+    assert result.page_price("mystery") == pytest.approx(0.005)
+
+
+def test_get_cu_pricing_honors_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CONTENT_UNDERSTANDING_STANDARD_PRICE_USD", "0.0075")
+    monkeypatch.setenv("CONTENT_UNDERSTANDING_CONTEXTUALIZATION_PRICE_USD_PER_1K", "0.002")
+
+    result = pricing.get_cu_pricing("eastus2")
+
+    assert result.standard_per_page == pytest.approx(0.0075)
+    assert result.contextualization_per_1k == pytest.approx(0.002)
+    # Untouched meters keep fallback defaults.
+    assert result.minimal_per_page == pytest.approx(0.001)

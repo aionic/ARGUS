@@ -433,17 +433,57 @@ def _normalize_result(result_payload: dict[str, Any], example_schema: dict[str, 
 
     extracted = _normalize_object(merged_fields, example_schema)
     confidence = _collect_confidence(merged_fields)
+    usage = _extract_usage(result_payload)
     logger.info(
         "Content Understanding extraction complete: %d field(s), %d content block(s)",
         len(merged_fields),
         len(contents),
     )
+    if usage:
+        logger.info(
+            "Content Understanding usage: meter=%s pages(minimal=%s basic=%s standard=%s) "
+            "contextualization_tokens=%s llm_tokens=%s",
+            _dominant_meter(usage),
+            usage.get("documentPagesMinimal", 0),
+            usage.get("documentPagesBasic", 0),
+            usage.get("documentPagesStandard", 0),
+            usage.get("contextualizationToken", usage.get("contextualizationTokens", 0)),
+            usage.get("tokens") or {},
+        )
     return {
         "ocr_output": "\n\n".join(markdown_parts),
         "extracted_data": extracted,
         "confidence": confidence,
+        "usage": usage,
         "raw": result,
     }
+
+
+def _extract_usage(result_payload: dict[str, Any]) -> dict[str, Any]:
+    """Pull the CU ``usage`` block from an analyze response, wherever it sits.
+
+    Across API versions the ``usage`` object appears either at the top level of
+    the operation payload or nested under ``result``; check both.
+    """
+    for candidate in (result_payload.get("usage"), (result_payload.get("result") or {}).get("usage")):
+        if isinstance(candidate, dict) and candidate:
+            return candidate
+    return {}
+
+
+def _dominant_meter(usage: dict[str, Any]) -> str | None:
+    """Highest content-extraction tier actually exercised (the CU 'level' used)."""
+    for key, meter in (
+        ("documentPagesStandard", "standard"),
+        ("documentPagesBasic", "basic"),
+        ("documentPagesMinimal", "minimal"),
+    ):
+        try:
+            if int(usage.get(key) or 0) > 0:
+                return meter
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _guess_mime(file_path: str) -> str:

@@ -55,7 +55,7 @@ import {
 } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { backendClient, type Document, type Cost, type ExtractionBackend, type CuFallback } from "@/lib/api-client"
+import { backendClient, type Document, type Cost, type ExtractionBackend, type CuFallback, type CuUsage } from "@/lib/api-client"
 import { formatDate, formatDuration, formatBytes } from "@/lib/utils"
 
 interface ProcessedDocument {
@@ -357,6 +357,7 @@ export function DocumentDetailSheet({
   const documentCost = typedProperties?.cost ?? document?.cost
   const extractionBackendUsed = typedProperties?.extraction_backend_used
   const cuFallback = typedProperties?.cu_fallback
+  const cuUsage = typedProperties?.content_understanding_usage
   const tierUsed = typedProperties?.tier
     ?? (typeof processingOptions?.tier === "string" ? processingOptions.tier : undefined)
     ?? document?.tier
@@ -1094,6 +1095,7 @@ export function DocumentDetailSheet({
                         tier={tierUsed}
                         backend={extractionBackendUsed}
                         cuFallback={cuFallback}
+                        cuUsage={cuUsage}
                       />
                     </TabsContent>
 
@@ -1305,16 +1307,31 @@ function ExtractionLineageBadge({ backend }: { backend?: ExtractionBackend }) {
   return <Badge variant="outline">GPT</Badge>
 }
 
+function cuMeterTooltip(meter: string): string {
+  switch (meter) {
+    case "minimal":
+      return "Minimal meter: digital documents (DOCX/XLSX/HTML/TXT), no OCR or layout - lowest cost."
+    case "basic":
+      return "Basic meter: image-based documents processed with OCR (read) only."
+    case "standard":
+      return "Standard meter: image-based documents with layout analysis (tables + structure)."
+    default:
+      return "Content Understanding content-extraction meter tier."
+  }
+}
+
 function CostPanel({
   cost,
   tier,
   backend,
   cuFallback,
+  cuUsage,
 }: {
   cost?: Cost
   tier?: string
   backend?: ExtractionBackend
   cuFallback?: CuFallback
+  cuUsage?: CuUsage
 }) {
   if (!cost) {
     return (
@@ -1388,6 +1405,16 @@ function CostPanel({
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Badge variant="outline" className="capitalize">Tier: {tier || "N/A"}</Badge>
+            {cuUsage?.meter && (
+              <Badge variant="outline" className="capitalize" title={cuMeterTooltip(cuUsage.meter)}>
+                CU level: {cuUsage.meter}
+              </Badge>
+            )}
+            {cuUsage?.contextualization_tokens ? (
+              <Badge variant="outline">
+                {formatNumber(cuUsage.contextualization_tokens)} contextualization tokens
+              </Badge>
+            ) : null}
             <Badge variant="outline">{formatNumber(totalTokens)} total tokens</Badge>
             {consumptionAvailable && (
               <Badge className="bg-emerald-500 hover:bg-emerald-500">Consumption pricing available</Badge>

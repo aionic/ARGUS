@@ -115,6 +115,47 @@ def _cu_page_price() -> float:
     return CONTENT_UNDERSTANDING_FALLBACK_USD_PER_PAGE
 
 
+def _merge_cu_usage(breakdowns: list[dict]) -> dict:
+    """Merge per-chunk CU usage breakdowns into one document-level summary."""
+    if not breakdowns:
+        return {}
+    pages = {"minimal": 0, "basic": 0, "standard": 0}
+    llm_tokens: dict[str, dict[str, int]] = {}
+    ctx_tokens = 0
+    extraction_usd = contextualization_usd = llm_usd = cu_usd = 0.0
+    rates: dict = {}
+    source = "fallback"
+    for bd in breakdowns:
+        for meter, count in (bd.get("pages") or {}).items():
+            pages[meter] = pages.get(meter, 0) + int(count or 0)
+        ctx_tokens += int(bd.get("contextualization_tokens") or 0)
+        for model, io in (bd.get("llm_tokens") or {}).items():
+            entry = llm_tokens.setdefault(model, {"input": 0, "output": 0})
+            entry["input"] += int(io.get("input") or 0)
+            entry["output"] += int(io.get("output") or 0)
+        extraction_usd += float(bd.get("extraction_usd") or 0)
+        contextualization_usd += float(bd.get("contextualization_usd") or 0)
+        llm_usd += float(bd.get("llm_usd") or 0)
+        cu_usd += float(bd.get("cu_usd") or 0)
+        rates = bd.get("rates") or rates
+        source = bd.get("pricing_source") or source
+    meter = next((tier for tier in ("standard", "basic", "minimal") if pages.get(tier)), None)
+    return {
+        "meter": meter,
+        "pages": pages,
+        "total_pages": sum(pages.values()),
+        "contextualization_tokens": ctx_tokens,
+        "llm_tokens": llm_tokens,
+        "extraction_usd": extraction_usd,
+        "contextualization_usd": contextualization_usd,
+        "llm_usd": llm_usd,
+        "cu_usd": cu_usd,
+        "total_usd": cu_usd + llm_usd,
+        "pricing_source": source,
+        "rates": rates,
+    }
+
+
 def _quality_flagging_enabled() -> bool:
     """Whether OpenCV image-quality metrics should *route/flag* documents.
 
@@ -239,7 +280,6 @@ def _cu_confidence_threshold(processing_options: dict) -> float | None:
         return float(raw)
     except (TypeError, ValueError):
         return None
-
 
 
 def _ocr_confidence_thresholds() -> tuple[float, float, float]:
@@ -708,6 +748,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             total_extraction_time = 0
             cu_confidence = {}
             cu_usable_images = False
+            cu_usage_breakdowns: list[dict] = []
             example_schema = document["model_input"]["example_schema"]
             dataset_name = document.get("dataset", "default")
             try:
@@ -721,12 +762,36 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 cu_result = get_cu_extraction(file_path, schema_obj, dataset_name, None)
                 cu_time = (datetime.now() - cu_start).total_seconds()
                 chunk_pages = _chunk_page_count(i, file_paths, max_pages_per_chunk, num_pages)
-                record_page_cost(
-                    "content_understanding",
-                    _cu_cost_model(),
-                    chunk_pages,
-                    chunk_pages * _cu_page_price(),
-                )
+                cu_usage = cu_result.get("usage") or {}
+                if cu_usage:
+                    # Meter-accurate: price each content-extraction tier + contextualization
+                    # tokens + generative LLM tokens exactly as CU reports them.
+                    breakdown = tracker.record_cu_usage(cu_usage, extraction_model=_cu_cost_model())
+                    cost_stages.add("content_understanding")
+                    if breakdown.get("llm_tokens"):
+                        cost_stages.add("content_understanding_llm")
+                    cu_usage_breakdowns.append(breakdown)
+                    logger.info(
+                        "Content Understanding chunk %d/%d billed: meter=%s pages=%s "
+                        "contextualization_tokens=%s llm_tokens=%s cu_usd=%.6f llm_usd=%.6f",
+                        i + 1,
+                        len(file_paths),
+                        breakdown.get("meter"),
+                        breakdown.get("pages"),
+                        breakdown.get("contextualization_tokens"),
+                        breakdown.get("llm_tokens"),
+                        breakdown.get("cu_usd", 0.0),
+                        breakdown.get("llm_usd", 0.0),
+                    )
+                else:
+                    # Older API / inline result without a usage block: fall back to the
+                    # flat per-page estimate so cost is never silently zero.
+                    record_page_cost(
+                        "content_understanding",
+                        _cu_cost_model(),
+                        chunk_pages,
+                        chunk_pages * _cu_page_price(),
+                    )
 
                 ocr_results.append(cu_result.get("ocr_output", ""))
                 extracted_data_list.append(cu_result.get("extracted_data", {}))
@@ -749,6 +814,19 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             processing_times["gpt_extraction_time"] = total_extraction_time
             document["extracted_data"]["ocr_output"] = "\n".join(str(r) for r in ocr_results)
             document["properties"]["extraction_backend_used"] = "content_understanding"
+            cu_usage_summary = _merge_cu_usage(cu_usage_breakdowns)
+            if cu_usage_summary:
+                document["properties"]["content_understanding_usage"] = cu_usage_summary
+                logger.info(
+                    "Content Understanding document usage: meter=%s pages=%s "
+                    "contextualization_tokens=%s llm_tokens=%s total_usd=%.6f (source=%s)",
+                    cu_usage_summary.get("meter"),
+                    cu_usage_summary.get("pages"),
+                    cu_usage_summary.get("contextualization_tokens"),
+                    cu_usage_summary.get("llm_tokens"),
+                    cu_usage_summary.get("total_usd", 0.0),
+                    cu_usage_summary.get("pricing_source"),
+                )
             if cu_confidence:
                 document["properties"]["content_understanding_confidence"] = cu_confidence
 
@@ -787,9 +865,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             cu_flag = document["properties"].get("flag") or {}
             cu_mean_conf = _cu_mean_confidence(cu_confidence)
             cu_threshold = _cu_confidence_threshold(processing_options)
-            low_cu_confidence = (
-                cu_mean_conf is not None and cu_threshold is not None and cu_mean_conf < cu_threshold
-            )
+            low_cu_confidence = cu_mean_conf is not None and cu_threshold is not None and cu_mean_conf < cu_threshold
             cu_fallback = _cu_fallback_enabled(processing_options) and (
                 bool(cu_flag.get("flagged")) or low_cu_confidence
             )
@@ -823,9 +899,7 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
 
         if extraction_backend != "content_understanding" or cu_fallback:
             # ── GPT extraction backend (explicit default or silent CU fallback) ──
-            document["properties"]["extraction_backend_used"] = (
-                "content_understanding+gpt" if cu_fallback else "gpt"
-            )
+            document["properties"]["extraction_backend_used"] = "content_understanding+gpt" if cu_fallback else "gpt"
 
             # Step 1: Run OCR for all files (conditional - only if OCR text will be used)
             ocr_results = []

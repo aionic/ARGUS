@@ -42,6 +42,23 @@ export interface Cost {
 export type CostObject = Cost
 export type DocumentCost = Cost
 
+// Meter-accurate Content Understanding usage captured from the CU `usage` block.
+// `meter` is the highest content-extraction tier exercised (the CU "level" used).
+export interface CuUsage {
+  meter?: "minimal" | "basic" | "standard" | null
+  pages?: { minimal?: number; basic?: number; standard?: number }
+  total_pages?: number
+  contextualization_tokens?: number
+  llm_tokens?: Record<string, { input: number; output: number }>
+  extraction_usd?: number
+  contextualization_usd?: number
+  llm_usd?: number
+  cu_usd?: number
+  total_usd?: number
+  pricing_source?: PricingSource
+  rates?: Record<string, number>
+}
+
 export interface PricingSettings {
   discount_pct: number
   consumption_available: boolean
@@ -157,6 +174,7 @@ export interface DocumentProperties {
   flag?: Flag
   extraction_backend_used?: ExtractionBackend
   cu_fallback?: CuFallback
+  content_understanding_usage?: CuUsage
 }
 
 export interface DocumentExtractedData {
