@@ -59,6 +59,9 @@ param defaultExtractionTier string = 'standard'
 @description('Whether pricing should use Azure Retail Prices API before fallback prices')
 param pricingUseRetailApi bool = true
 
+@description('Overall Azure agreement discount off list price applied to displayed costs (0-100). Editable at runtime in the Settings UI.')
+param pricingDiscountPct string = '28'
+
 @description('Fraction of low-quality pages that routes a document to review')
 param routingLowQualityPageFraction string = '0.5'
 
@@ -205,6 +208,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             // Cost controls and routing defaults
             { name: 'DEFAULT_EXTRACTION_TIER', value: defaultExtractionTier }
             { name: 'PRICING_USE_RETAIL_API', value: toLower(string(pricingUseRetailApi)) }
+            { name: 'PRICING_DISCOUNT_PCT', value: pricingDiscountPct }
             { name: 'ROUTING_LOW_QUALITY_PAGE_FRACTION', value: routingLowQualityPageFraction }
             { name: 'ROUTING_LOW_QUALITY_MIN_PAGES', value: routingLowQualityMinPages }
             { name: 'ROUTING_MIN_OCR_TEXT_LENGTH', value: routingMinOcrTextLength }

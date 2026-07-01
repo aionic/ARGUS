@@ -198,6 +198,9 @@ def _set_flag(document: dict, reasons: list[str], stage: str) -> None:
     }
 
 
+DEFAULT_DISCOUNT_PCT = 28.0
+
+
 def _pricing_settings() -> dict:
     """Solution-wide pricing knobs (agreement discount + consumption flag).
 
@@ -205,14 +208,14 @@ def _pricing_settings() -> dict:
     the Settings UI), falling back to env vars and then sane defaults. Failures are
     non-fatal — pricing display simply defaults to full Azure list price.
     """
-    discount = 0.0
+    discount = DEFAULT_DISCOUNT_PCT
     consumption = os.getenv("PRICING_CONSUMPTION_AVAILABLE", "false").lower() in ("1", "true", "yes")
     env_discount = os.getenv("PRICING_DISCOUNT_PCT")
     if env_discount:
         try:
             discount = float(env_discount)
         except ValueError:
-            discount = 0.0
+            discount = DEFAULT_DISCOUNT_PCT
     try:
         from dependencies import get_conf_container
 

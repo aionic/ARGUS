@@ -40,6 +40,9 @@ param defaultExtractionTier string = 'standard'
 @description('Whether pricing should use Azure Retail Prices API before fallback prices')
 param pricingUseRetailApi bool = true
 
+@description('Overall Azure agreement discount off list price applied to displayed costs (0-100). Editable at runtime in the Settings UI.')
+param pricingDiscountPct string = '28'
+
 @description('Fraction of low-quality pages that routes a document to review')
 param routingLowQualityPageFraction string = '0.5'
 
@@ -233,6 +236,7 @@ module containerApps 'modules/container-apps.bicep' = {
     enablePaddlePregate: enablePaddlePregate
     defaultExtractionTier: defaultExtractionTier
     pricingUseRetailApi: pricingUseRetailApi
+    pricingDiscountPct: pricingDiscountPct
     routingLowQualityPageFraction: routingLowQualityPageFraction
     routingLowQualityMinPages: routingLowQualityMinPages
     routingMinOcrTextLength: routingMinOcrTextLength

@@ -64,6 +64,9 @@ interface ConcurrencySettingsResponse {
   error?: string
 }
 
+// Default agreement discount off Azure list price (editable in this UI).
+const DEFAULT_DISCOUNT_PCT = 28
+
 export default function SettingsPage() {
   // OpenAI Settings state
   const [openaiEndpoint, setOpenaiEndpoint] = React.useState("")
@@ -87,7 +90,7 @@ export default function SettingsPage() {
   const [isSavingConcurrency, setIsSavingConcurrency] = React.useState(false)
 
   // Pricing Settings state (agreement discount + consumption availability)
-  const [discountPct, setDiscountPct] = React.useState(0)
+  const [discountPct, setDiscountPct] = React.useState(DEFAULT_DISCOUNT_PCT)
   const [consumptionAvailable, setConsumptionAvailable] = React.useState(false)
   const [isLoadingPricing, setIsLoadingPricing] = React.useState(true)
   const [isSavingPricing, setIsSavingPricing] = React.useState(false)
@@ -214,11 +217,11 @@ export default function SettingsPage() {
     setIsLoadingPricing(true)
     try {
       const settings = await backendClient.getPricingSettings()
-      setDiscountPct(settings.discount_pct ?? 0)
+      setDiscountPct(settings.discount_pct ?? DEFAULT_DISCOUNT_PCT)
       setConsumptionAvailable(settings.consumption_available ?? false)
     } catch (error) {
       console.error("Failed to load pricing settings:", error)
-      setDiscountPct(0)
+      setDiscountPct(DEFAULT_DISCOUNT_PCT)
       setConsumptionAvailable(false)
     } finally {
       setIsLoadingPricing(false)
@@ -582,7 +585,7 @@ export default function SettingsPage() {
                     className="max-w-[160px]"
                   />
                   <p className="text-xs text-muted-foreground">
-                    0 = full list price. Net cost = list × (1 − discount). Clamped to 0–100%.
+                    0 = full list price. Net cost = list × (1 − discount). Defaults to 28% (overall Azure agreement discount). Clamped to 0–100%.
                   </p>
                 </div>
 

@@ -56,6 +56,29 @@ def test_cost_tracker_aggregates_tokens_pages_and_sources() -> None:
     ]
 
 
+def test_cost_tracker_applies_agreement_discount() -> None:
+    def stub_price(model: str, region: str) -> PricingResult:
+        return PricingResult(
+            model=model,
+            region=region,
+            input_per_1k=0.001,
+            output_per_1k=0.002,
+            source="azure_retail",
+        )
+
+    tracker = CostTracker(region="eastus", price_fn=stub_price)
+    tracker.record("extraction", "gpt-test", 1000, 500)  # list = 0.001 + 0.001 = 0.002
+
+    cost = tracker.aggregate(num_pages=1, discount_pct=28.0, consumption_available=True)
+
+    assert cost["list_total_usd"] == pytest.approx(0.002)
+    assert cost["discount_pct"] == pytest.approx(28.0)
+    assert cost["total_usd"] == pytest.approx(0.002 * 0.72)
+    assert cost["usd_per_page"] == pytest.approx(0.002 * 0.72)
+    assert cost["list_usd_per_page"] == pytest.approx(0.002)
+    assert cost["consumption_available"] is True
+
+
 def _stub_price(model: str, region: str) -> PricingResult:
     return PricingResult(
         model=model,

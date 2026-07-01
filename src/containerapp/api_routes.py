@@ -798,15 +798,18 @@ async def update_openai_settings(request: Request):
         raise HTTPException(status_code=400, detail=f"Error updating settings: {str(e)}")
 
 
+DEFAULT_DISCOUNT_PCT = 28.0
+
+
 def _default_pricing_settings() -> dict:
     """Solution-wide pricing knobs with env-var fallbacks."""
-    discount = 0.0
+    discount = DEFAULT_DISCOUNT_PCT
     raw = os.getenv("PRICING_DISCOUNT_PCT")
     if raw:
         try:
             discount = float(raw)
         except ValueError:
-            discount = 0.0
+            discount = DEFAULT_DISCOUNT_PCT
     return {
         "discount_pct": max(0.0, min(discount, 100.0)),
         "consumption_available": os.getenv("PRICING_CONSUMPTION_AVAILABLE", "false").lower() in ("1", "true", "yes"),
