@@ -29,6 +29,7 @@ from profiling import run_cost_profile
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "functionapp"))
 from ai_ocr.agents import assistant_message, run_chat, text_content, user_message
+from ai_ocr.cost import get_pricing
 from ai_ocr.process import connect_to_cosmos, fetch_model_prompt_and_schema
 
 logger = logging.getLogger(__name__)
@@ -1669,6 +1670,59 @@ async def list_flagged_documents():
         raise HTTPException(status_code=500, detail=f"Failed to list flagged documents: {str(e)}")
 
 
+def _cost_region() -> str:
+    """Region used for cost pricing lookups (mirrors blob_processing._cost_region)."""
+    return os.getenv("AZURE_LOCATION") or os.getenv("AZURE_REGION") or "eastus2"
+
+
+def _price_chat_usage(result, container=None) -> dict:
+    """Turn a run_chat ChatResult's token usage into a priced usage object.
+
+    Returns input/output/total tokens, the model used, per-side and total USD, the
+    pricing source (azure_retail|fallback) and region. USD fields are None when token
+    counts are unavailable so callers can distinguish "no usage" from "$0".
+    """
+    input_tokens = getattr(result, "input_tokens", None)
+    output_tokens = getattr(result, "output_tokens", None)
+    total_tokens = getattr(result, "total_tokens", None)
+    model = getattr(result, "model", None) or os.getenv("AZURE_OPENAI_MODEL_DEPLOYMENT_NAME", "")
+    region = _cost_region()
+
+    usage = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens
+        if total_tokens is not None
+        else (
+            (input_tokens or 0) + (output_tokens or 0)
+            if (input_tokens is not None or output_tokens is not None)
+            else None
+        ),
+        "model": model,
+        "region": region,
+        "input_usd": None,
+        "output_usd": None,
+        "total_usd": None,
+        "pricing_source": None,
+    }
+
+    if input_tokens is None and output_tokens is None:
+        return usage
+
+    try:
+        pricing = get_pricing(model, region, container)
+        input_usd = (input_tokens or 0) / 1000.0 * pricing.input_per_1k
+        output_usd = (output_tokens or 0) / 1000.0 * pricing.output_per_1k
+        usage["input_usd"] = round(input_usd, 6)
+        usage["output_usd"] = round(output_usd, 6)
+        usage["total_usd"] = round(input_usd + output_usd, 6)
+        usage["pricing_source"] = pricing.source
+    except Exception as e:  # pricing must never break email generation
+        logger.warning("Could not price email token usage: %s", e)
+
+    return usage
+
+
 async def generate_flag_email(document_id: str, request: Request):
     """Generate a flagged-document email draft using the configured prompt template."""
     try:
@@ -1715,6 +1769,7 @@ async def generate_flag_email(document_id: str, request: Request):
             _get_uploader_email(document) or flag_email_config.get("to_fallback") or DEFAULT_FLAG_EMAIL_TO_FALLBACK
         )
         draft["from"] = flag_email_config.get("from") or DEFAULT_FLAG_EMAIL_FROM
+        draft["usage"] = _price_chat_usage(result, data_container)
         return draft
 
     except HTTPException:
