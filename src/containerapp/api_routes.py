@@ -1723,6 +1723,17 @@ def _price_chat_usage(result, container=None) -> dict:
     return usage
 
 
+def _flag_email_model() -> str | None:
+    """Deployment used for flagged-document email drafting.
+
+    Emails are short, templated drafts that don't need the premium reasoning model,
+    so default to the cheaper summary/mini deployment. Precedence:
+    FLAG_EMAIL_MODEL_DEPLOYMENT_NAME > SUMMARY_MODEL_DEPLOYMENT_NAME > default (None
+    lets run_chat fall back to AZURE_OPENAI_MODEL_DEPLOYMENT_NAME).
+    """
+    return os.getenv("FLAG_EMAIL_MODEL_DEPLOYMENT_NAME") or os.getenv("SUMMARY_MODEL_DEPLOYMENT_NAME") or None
+
+
 async def generate_flag_email(document_id: str, request: Request):
     """Generate a flagged-document email draft using the configured prompt template."""
     try:
@@ -1762,6 +1773,7 @@ async def generate_flag_email(document_id: str, request: Request):
             instructions=instructions,
             temperature=0.2,
             max_tokens=900,
+            model=_flag_email_model(),
         )
 
         draft = _parse_email_draft(result.text, document)
