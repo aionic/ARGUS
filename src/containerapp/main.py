@@ -100,20 +100,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware - Allow frontend origins
-# Get allowed origins from environment or use defaults
-cors_origins = os.getenv("CORS_ORIGINS", "").split(",")
-cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
-
-# Default allowed origins for local development
-default_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
-# Add any dynamically configured origins
-all_origins = list(set(default_origins + cors_origins))
-
+# CORS middleware. The backend is protected by the X-API-Key middleware below
+# (and, in the deployed topology, is only reached through the Next.js proxy), so
+# CORS is intentionally permissive for the browser preflight.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins

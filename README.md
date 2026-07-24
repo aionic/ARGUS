@@ -73,6 +73,10 @@ Traditional OCR solutions extract text but miss the context. AI-only approaches 
 
 ARGUS employs a modern, cloud-native architecture designed for enterprise workloads:
 
+> 📐 **Deep dive:** For detailed solution-flow and Azure architecture diagrams
+> (network topology, RBAC, ingestion/event flow, processing pipeline, MCP, and
+> azd deployment), see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
 <div align="center">
 
 ```mermaid
@@ -81,7 +85,7 @@ graph TB
         A[📄 Documents] --> B[📁 Azure Blob Storage]
         C[🌐 Direct Upload API] --> D[🚀 FastAPI Backend]
     end
-    
+
     subgraph "🧠 AI Processing Engine"
         B --> D
         D --> E{🔍 OCR Provider}
@@ -92,20 +96,20 @@ graph TB
         E2 --> G
         F --> G
     end
-    
+
     subgraph "💡 Intelligence & Analytics"
         G --> H[📊 Custom Evaluators]
         G --> I[💬 Interactive Chat]
         H --> J[📈 Results & Analytics]
     end
-    
+
     subgraph "💾 Data Layer"
         G --> K[🗄️ Azure Cosmos DB]
         J --> K
         I --> K
         K --> L[📱 Next.js Frontend]
     end
-    
+
     style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style B fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     style C fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
@@ -227,7 +231,7 @@ curl "$(azd env get-value BACKEND_URL)/health"
   "status": "healthy",
   "services": {
     "cosmos_db": "✅ connected",
-    "blob_storage": "✅ connected", 
+    "blob_storage": "✅ connected",
     "document_intelligence": "✅ connected",
     "azure_openai": "✅ connected"
   }
@@ -655,9 +659,7 @@ Email defaults are configured with `FLAG_EMAIL_FROM` and `FLAG_EMAIL_TO_FALLBACK
 
 ---
 
-The Streamlit frontend is **automatically deployed** with `azd up` and provides a user-friendly interface for document management.
-
-> **Note**: ARGUS ships with two frontends: a modern **Next.js** interface (default, deployed as `ca-frontend`) and a legacy **Streamlit** interface. The Next.js frontend is recommended for production use.
+The **Next.js** frontend is **automatically deployed** with `azd up` (as `ca-frontend`) and provides a user-friendly interface for document management.
 
 <div align="center">
 <img src="docs/ArchitectureOverview.png" alt="ARGUS Frontend Interface" width="800"/>
@@ -765,21 +767,6 @@ ARGUS/
 │   ├── 🐳 Dockerfile                    # Frontend container definition
 │   ├── 📦 package.json                  # Node.js dependencies
 │   └── ⚙️ next.config.js               # Next.js configuration
-│
-├── 📂 frontend/                         # 🖥️ Legacy Streamlit Interface
-│   ├── 📱 app.py                        # Main Streamlit application entry point
-│   ├── 🔄 backend_client.py             # API client for backend communication
-│   ├── 📤 process_files.py              # File upload & processing interface
-│   ├── 🔍 explore_data.py               # Document browsing & analysis UI
-│   ├── 💬 document_chat.py              # Interactive document Q&A interface
-│   ├── 📋 instructions.py               # Help & documentation tab
-│   ├── ⚙️ settings.py                   # Configuration management UI
-│   ├── 🎛️ concurrency_management.py    # Performance tuning interface
-│   ├── 📊 concurrency_settings.py      # Concurrency configuration utilities
-│   ├── 🐳 Dockerfile                    # Frontend container definition
-│   ├── 📦 requirements.txt              # Python dependencies for frontend
-│   └── 📂 static/                       # Static assets (logos, images)
-│       └── 🖼️ logo.png                  # ARGUS brand logo
 │
 ├── 📂 demo/                             # 📋 Sample Datasets & Examples
 │   ├── 📂 default-dataset/              # General business documents dataset
@@ -1018,10 +1005,10 @@ We welcome contributions! Here's how to get started:
    ```bash
    # Setup development environment
    ./scripts/setup-dev.sh
-   
+
    # Run tests
    pytest tests/ -v
-   
+
    # Lint code
    black src/ && flake8 src/
    ```
@@ -1065,6 +1052,7 @@ Contributors will be recognized in:
 | Resource | Description | Link |
 |----------|-------------|------|
 | **📚 Documentation** | Complete setup and usage guides | [docs/](docs/) |
+| **📐 Architecture** | Solution flow & Azure architecture diagrams | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | **�🐛 Issue Tracker** | Bug reports and feature requests | [GitHub Issues](https://github.com/Azure-Samples/ARGUS/issues) |
 | **💡 Discussions** | Community Q&A and ideas | [GitHub Discussions](https://github.com/Azure-Samples/ARGUS/discussions) |
 | **📧 Team Contact** | Direct contact for enterprise needs | See team section below |
