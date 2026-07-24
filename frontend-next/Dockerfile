@@ -3,8 +3,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files and the Microsoft npm proxy configuration
+COPY package*.json .npmrc ./
 
 # Install dependencies
 RUN npm ci

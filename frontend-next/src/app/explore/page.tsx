@@ -15,8 +15,6 @@ import {
   Clock,
   BarChart3,
   Calendar,
-  Loader2,
-  ChevronDown,
   Eye,
   ArrowUpDown,
   ArrowUp,
@@ -210,6 +208,9 @@ export default function ExplorePage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [documentsToDelete, setDocumentsToDelete] = React.useState<ProcessedDocument[]>([])
 
+  // Fetch in lightweight pages so filters, analytics, and refreshes cover the full workspace.
+  const PAGE_SIZE = 200
+
   // Filters
   const [datasetFilter, setDatasetFilter] = React.useState<string>("all")
   const [statusFilter, setStatusFilter] = React.useState<string>("all")
@@ -231,9 +232,24 @@ export default function ExplorePage() {
   async function loadDocuments() {
     setIsLoading(true)
     try {
-      const response = await backendClient.listDocuments()
-      const docs = parseDocuments(response.documents || [])
-      setDocuments(docs.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()))
+      const allDocuments: Document[] = []
+      const seenContinuations = new Set<string>()
+      let continuationToken: string | null = null
+
+      do {
+        const response = await backendClient.listDocuments(undefined, PAGE_SIZE, continuationToken, true)
+        allDocuments.push(...(response.documents || []))
+
+        const nextContinuation = response.continuation ?? null
+        if (nextContinuation && seenContinuations.has(nextContinuation)) {
+          throw new Error("Document pagination returned a repeated continuation token")
+        }
+        if (nextContinuation) seenContinuations.add(nextContinuation)
+        continuationToken = nextContinuation
+      } while (continuationToken)
+
+      const byId = new Map(parseDocuments(allDocuments).map((document) => [document.id, document]))
+      setDocuments(Array.from(byId.values()).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()))
     } catch (error) {
       console.error("Failed to load documents:", error)
       toast.error("Failed to load documents")

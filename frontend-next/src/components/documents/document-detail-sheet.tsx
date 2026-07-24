@@ -30,6 +30,7 @@ import {
   RefreshCw,
   Settings,
   DollarSign,
+  Gauge,
   ZoomIn,
   ZoomOut,
   Move,
@@ -55,7 +56,7 @@ import {
 } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { backendClient, type Document, type Cost, type ExtractionBackend, type CuFallback, type CuUsage } from "@/lib/api-client"
+import { backendClient, type Document, type Cost, type ExtractionBackend, type CuChunkEvidence, type CuFallback, type CuUsage, type OcrConfidence, type PageMetric } from "@/lib/api-client"
 import { formatDate, formatDuration, formatBytes } from "@/lib/utils"
 
 interface ProcessedDocument {
@@ -122,6 +123,46 @@ function formatNumber(value: number | null | undefined): string {
 
 function formatStageName(stage: string): string {
   return stage.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+/** Confidence band → semantic color classes for the field-confidence view. */
+function confidenceColor(score: number): { text: string; bar: string; label: string } {
+  if (score >= 0.8) return { text: "text-green-600 dark:text-green-400", bar: "bg-green-500", label: "High" }
+  if (score >= 0.6) return { text: "text-amber-600 dark:text-amber-400", bar: "bg-amber-500", label: "Medium" }
+  return { text: "text-red-600 dark:text-red-400", bar: "bg-red-500", label: "Low" }
+}
+
+/** Flatten Content Understanding per-chunk confidence into one {path: score} map,
+ *  keeping the lowest score on collision so the worst case surfaces. */
+function flattenCuConfidence(
+  cuConfidence: Record<string, Record<string, number>> | undefined
+): Record<string, number> {
+  const merged: Record<string, number> = {}
+  if (!cuConfidence) return merged
+  for (const chunk of Object.values(cuConfidence)) {
+    if (!chunk || typeof chunk !== "object") continue
+    for (const [path, score] of Object.entries(chunk)) {
+      if (typeof score === "number" && Number.isFinite(score)) {
+        merged[path] = path in merged ? Math.min(merged[path], score) : score
+      }
+    }
+  }
+  return merged
+}
+
+/** Best-effort resolution of a dotted/bracketed field path (e.g. "line_items[0].total")
+ *  against the extracted data object. Returns a short display string. */
+function resolveByPath(data: unknown, path: string): string {
+  if (data == null) return ""
+  const tokens = path.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean)
+  let current: unknown = data
+  for (const token of tokens) {
+    if (current == null || typeof current !== "object") return ""
+    current = (current as Record<string, unknown>)[token]
+  }
+  if (current == null) return ""
+  if (typeof current === "object") return Array.isArray(current) ? `[${current.length} items]` : "{…}"
+  return String(current)
 }
 
 export function DocumentDetailSheet({
@@ -358,6 +399,8 @@ export function DocumentDetailSheet({
   const extractionBackendUsed = typedProperties?.extraction_backend_used
   const cuFallback = typedProperties?.cu_fallback
   const cuUsage = typedProperties?.content_understanding_usage
+  const pageMetrics = typedProperties?.page_metrics ?? []
+  const cuChunks = typedProperties?.content_understanding_chunks ?? []
   const tierUsed = typedProperties?.tier
     ?? (typeof processingOptions?.tier === "string" ? processingOptions.tier : undefined)
     ?? document?.tier
@@ -394,6 +437,28 @@ export function DocumentDetailSheet({
     }
     return null
   }, [gptExtractionWithEval])
+
+  // Field-level extraction confidence. Prefer the server-merged flat map; fall
+  // back to flattening Content Understanding per-chunk confidence client-side.
+  const fieldConfidence = React.useMemo<Record<string, number>>(() => {
+    const fromBackend = fullDocument?.field_confidence
+    if (fromBackend && Object.keys(fromBackend).length > 0) return fromBackend
+    return flattenCuConfidence(typedProperties?.content_understanding_confidence)
+  }, [fullDocument?.field_confidence, typedProperties?.content_understanding_confidence])
+
+  const confidenceRows = React.useMemo(() => {
+    return Object.entries(fieldConfidence)
+      .map(([path, score]) => ({ path, score, value: resolveByPath(extractedData, path) }))
+      .sort((a, b) => a.score - b.score)
+  }, [fieldConfidence, extractedData])
+
+  const confidenceMean = React.useMemo(() => {
+    const scores = Object.values(fieldConfidence)
+    if (scores.length === 0) return null
+    return scores.reduce((sum, s) => sum + s, 0) / scores.length
+  }, [fieldConfidence])
+
+  const ocrConfidence: OcrConfidence | null | undefined = fullDocument?.ocr_confidence
 
   // Combine OCR text - handle both string and array formats
   const ocrText = React.useMemo(() => {
@@ -614,7 +679,7 @@ export function DocumentDetailSheet({
                         </div>
                       ) : (
                         <iframe
-                          src={fileUrl}
+                          src={`${fileUrl}#page=${currentPage}`}
                           className="w-full h-full rounded-lg border"
                           title="Document Preview"
                         />
@@ -639,6 +704,14 @@ export function DocumentDetailSheet({
                   <TabsTrigger value="evaluation" className="flex items-center gap-2">
                     <CheckCircle className="h-4 w-4" />
                     Evaluation
+                  </TabsTrigger>
+                  <TabsTrigger value="confidence" className="flex items-center gap-2">
+                    <Gauge className="h-4 w-4" />
+                    Confidence
+                  </TabsTrigger>
+                  <TabsTrigger value="pages" className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Pages
                   </TabsTrigger>
                   <TabsTrigger value="ocr" className="flex items-center gap-2">
                     <Code className="h-4 w-4" />
@@ -846,6 +919,88 @@ export function DocumentDetailSheet({
                             )}
                           </CardContent>
                         </Card>
+                      </TabsContent>
+
+                      {/* Confidence Tab */}
+                      <TabsContent value="confidence" className="absolute inset-0 m-0 p-4 overflow-hidden data-[state=inactive]:hidden">
+                        <Card className="flex flex-col h-full overflow-hidden">
+                          <CardHeader className="pb-3 flex-shrink-0">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-lg">Field Confidence</CardTitle>
+                              <div className="flex items-center gap-2">
+                                {confidenceMean != null && (
+                                  <Badge variant="outline">Mean {(confidenceMean * 100).toFixed(1)}%</Badge>
+                                )}
+                                {ocrConfidence?.mean != null && (
+                                  <Badge variant="outline" title="Aggregated OCR word-recognition confidence">
+                                    OCR {(ocrConfidence.mean * 100).toFixed(1)}%
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <CardDescription>
+                              Per-field extraction confidence (0–100%). Lowest-confidence fields are listed first for review.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="flex-1 overflow-auto p-0">
+                            {confidenceRows.length > 0 ? (
+                              <Table>
+                                <TableHeader className="sticky top-0 bg-background z-10">
+                                  <TableRow>
+                                    <TableHead>Field</TableHead>
+                                    <TableHead>Value</TableHead>
+                                    <TableHead className="w-[190px]">Confidence</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {confidenceRows.map((row) => {
+                                    const pct = Math.round(row.score * 100)
+                                    const c = confidenceColor(row.score)
+                                    return (
+                                      <TableRow key={row.path}>
+                                        <TableCell className="font-mono text-xs align-top">{row.path}</TableCell>
+                                        <TableCell
+                                          className="text-xs align-top max-w-[220px] truncate"
+                                          title={row.value}
+                                        >
+                                          {row.value || "—"}
+                                        </TableCell>
+                                        <TableCell className="align-top">
+                                          <div className="flex items-center gap-2">
+                                            <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
+                                              <div className={`h-full ${c.bar}`} style={{ width: `${pct}%` }} />
+                                            </div>
+                                            <span className={`text-xs font-medium tabular-nums w-9 text-right ${c.text}`}>
+                                              {pct}%
+                                            </span>
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    )
+                                  })}
+                                </TableBody>
+                              </Table>
+                            ) : (
+                              <div className="h-full flex items-center justify-center text-muted-foreground p-8">
+                                <div className="text-center">
+                                  <Gauge className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                                  <p>No field-level confidence available</p>
+                                  <p className="text-xs mt-1">
+                                    Field confidence is produced by the Content Understanding extraction backend.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </TabsContent>
+
+                      <TabsContent value="pages" className="absolute inset-0 m-0 p-4 overflow-hidden data-[state=inactive]:hidden">
+                        <PageAnalysisPanel
+                          metrics={pageMetrics}
+                          chunks={cuChunks}
+                          onSelectPage={setCurrentPage}
+                        />
                       </TabsContent>
 
                       {/* OCR Tab */}
@@ -1320,6 +1475,187 @@ function cuMeterTooltip(meter: string): string {
   }
 }
 
+/** Human label for the Content Understanding call depth. */
+function cuCallTypeLabel(callType: string): string {
+  switch (callType) {
+    case "content_extraction":
+      return "Content extraction"
+    case "field_extraction":
+      return "Field extraction"
+    case "end_to_end":
+      return "End-to-end"
+    default:
+      return callType
+  }
+}
+
+/** Tooltip describing what each Content Understanding call type bills for. */
+function cuCallTypeTooltip(callType: string): string {
+  switch (callType) {
+    case "content_extraction":
+      return "Content extraction only: OCR/layout of the document, no field extraction or generative model calls (lowest cost)."
+    case "field_extraction":
+      return "Field extraction: structured fields resolved from the schema (contextualization), without generative LLM tokens."
+    case "end_to_end":
+      return "End-to-end: content extraction + schema field extraction + generative LLM reasoning in a single Content Understanding call (full analyzer)."
+    default:
+      return "Content Understanding call type."
+  }
+}
+
+function PageAnalysisPanel({
+  metrics,
+  chunks,
+  onSelectPage,
+}: {
+  metrics: PageMetric[]
+  chunks: CuChunkEvidence[]
+  onSelectPage: (page: number) => void
+}) {
+  const [selectedPage, setSelectedPage] = React.useState<number | null>(metrics[0]?.page_number ?? null)
+
+  React.useEffect(() => {
+    setSelectedPage(metrics[0]?.page_number ?? null)
+  }, [metrics])
+
+  const selectedMetric = metrics.find((metric) => metric.page_number === selectedPage) ?? null
+  const selectedChunk = chunks.find((chunk) => chunk.id === selectedMetric?.chunk_id) ?? null
+
+  if (!metrics.length) {
+    return (
+      <Card className="flex h-full flex-col overflow-hidden">
+        <CardHeader>
+          <CardTitle className="text-lg">Page Analysis</CardTitle>
+          <CardDescription>Cost, confidence, and extraction evidence by page</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-1 items-center justify-center text-center text-muted-foreground">
+          <div>
+            <FileText className="mx-auto mb-2 h-12 w-12 opacity-50" />
+            <p>No Content Understanding page metrics available</p>
+            <p className="mt-1 text-xs">Page metrics are recorded for newly processed CU documents.</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="flex h-full flex-col overflow-hidden">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg">Page Analysis</CardTitle>
+        <CardDescription>
+          Exact CU meter charges plus contextualization and model spend allocated equally within each CU chunk.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex-1 space-y-4 overflow-auto">
+        <Table>
+          <TableHeader className="sticky top-0 z-10 bg-background">
+            <TableRow>
+              <TableHead>Page</TableHead>
+              <TableHead>CU</TableHead>
+              <TableHead className="text-right">Net meter</TableHead>
+              <TableHead className="text-right">Net shared</TableHead>
+              <TableHead className="text-right">Net all-in</TableHead>
+              <TableHead className="text-right">Confidence</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {metrics.map((metric) => {
+              const chunk = chunks.find((candidate) => candidate.id === metric.chunk_id)
+              const sharedCost = metric.allocated_contextualization_usd + metric.allocated_llm_usd
+              return (
+                <TableRow
+                  key={metric.page_number}
+                  className={`cursor-pointer ${selectedPage === metric.page_number ? "bg-muted" : ""}`}
+                  onClick={() => {
+                    setSelectedPage(metric.page_number)
+                    onSelectPage(metric.page_number)
+                  }}
+                >
+                  <TableCell className="font-medium">{metric.page_number}</TableCell>
+                  <TableCell className="capitalize text-xs">{metric.meter || "N/A"}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatUsd(metric.allocated_meter_usd)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatUsd(sharedCost)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{formatUsd(metric.estimated_all_in_usd)}</TableCell>
+                  <TableCell className="text-right text-xs">
+                    {chunk?.confidence.mean != null ? `${Math.round(chunk.confidence.mean * 100)}%` : "N/A"}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+
+        {selectedMetric && selectedChunk && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-lg border p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">Page {selectedMetric.page_number}</Badge>
+                <Badge variant="outline">{selectedChunk.id.replace("_", " ")}</Badge>
+                <Badge variant="secondary">Chunk-level provenance</Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded bg-muted p-2">
+                  <div className="text-muted-foreground">CU meter</div>
+                  <div className="font-mono">{formatUsd(selectedMetric.allocated_meter_usd)}</div>
+                </div>
+                <div className="rounded bg-muted p-2">
+                  <div className="text-muted-foreground">Shared allocation</div>
+                  <div className="font-mono">
+                    {formatUsd(selectedMetric.allocated_contextualization_usd + selectedMetric.allocated_llm_usd)}
+                  </div>
+                </div>
+                <div className="rounded bg-muted p-2">
+                  <div className="text-muted-foreground">Mean confidence</div>
+                  <div>{selectedChunk.confidence.mean != null ? `${(selectedChunk.confidence.mean * 100).toFixed(1)}%` : "N/A"}</div>
+                </div>
+                <div className="rounded bg-muted p-2">
+                  <div className="text-muted-foreground">Lowest confidence</div>
+                  <div>{selectedChunk.confidence.min != null ? `${(selectedChunk.confidence.min * 100).toFixed(1)}%` : "N/A"}</div>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                CU analyzed pages {selectedChunk.page_start}-{selectedChunk.page_end} together. Field evidence applies to the chunk because CU did not return reliable field-level page spans.
+              </p>
+            </div>
+            <div className="space-y-2 rounded-lg border p-3">
+              <div className="text-sm font-medium">Chunk Extraction Output</div>
+              <pre className="max-h-52 overflow-auto rounded bg-muted p-3 text-xs">
+                {JSON.stringify(selectedChunk.output, null, 2)}
+              </pre>
+              {Object.keys(selectedChunk.field_confidence).length > 0 && (
+                <details>
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Field confidence ({selectedChunk.confidence.field_count})
+                  </summary>
+                  <div className="mt-2 space-y-1">
+                    {Object.entries(selectedChunk.field_confidence)
+                      .sort(([, firstScore], [, secondScore]) => firstScore - secondScore)
+                      .map(([path, score]) => (
+                        <div key={path} className="flex items-center justify-between gap-3 rounded bg-muted px-2 py-1 text-xs">
+                          <span className="min-w-0 truncate font-mono" title={path}>{path}</span>
+                          <span className={confidenceColor(score).text}>{(score * 100).toFixed(1)}%</span>
+                        </div>
+                      ))}
+                  </div>
+                </details>
+              )}
+              {selectedChunk.ocr_markdown && (
+                <details>
+                  <summary className="cursor-pointer text-sm font-medium">CU markdown</summary>
+                  <pre className="mt-2 max-h-40 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap">
+                    {selectedChunk.ocr_markdown}
+                  </pre>
+                </details>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function CostPanel({
   cost,
   tier,
@@ -1405,6 +1741,11 @@ function CostPanel({
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Badge variant="outline" className="capitalize">Tier: {tier || "N/A"}</Badge>
+            {cuUsage?.call_type && (
+              <Badge className="bg-sky-500 hover:bg-sky-500" title={cuCallTypeTooltip(cuUsage.call_type)}>
+                CU call: {cuCallTypeLabel(cuUsage.call_type)}
+              </Badge>
+            )}
             {cuUsage?.meter && (
               <Badge variant="outline" className="capitalize" title={cuMeterTooltip(cuUsage.meter)}>
                 CU level: {cuUsage.meter}
@@ -1439,7 +1780,9 @@ function CostPanel({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Per-Stage Breakdown</CardTitle>
-          <CardDescription>Model, token usage, and cost by pipeline stage</CardDescription>
+          <CardDescription>
+            Model, token usage, and {hasDiscount ? "agreement-adjusted " : ""}cost by pipeline stage
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {cost.per_stage?.length ? (

@@ -299,8 +299,13 @@ async def get_document_file(document_id: str):
 
 # Document management endpoints
 @app.get("/api/documents")
-async def list_documents(dataset: str = None):
-    return await api_routes.list_documents(dataset)
+async def list_documents(
+    dataset: str = None,
+    limit: int = 500,
+    continuation: str | None = None,
+    lightweight: bool = False,
+):
+    return await api_routes.list_documents(dataset, limit, continuation, lightweight)
 
 
 @app.get("/api/documents/flagged")

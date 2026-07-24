@@ -21,7 +21,7 @@ param azureOpenaiModelDeploymentName string
   'gpt'
   'content_understanding'
 ])
-param extractionBackend string = 'gpt'
+param extractionBackend string = 'content_understanding'
 
 @description('Enable OpenCV image quality preprocessing/enhancement by default')
 param enableImagePreprocessing bool = false

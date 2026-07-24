@@ -28,6 +28,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "functionapp"))
 from ai_ocr.azure.content_understanding import get_cu_extraction
 from ai_ocr.azure.doc_intelligence import get_read_confidence
 from ai_ocr.cost import CostTracker, di_page_price
+from ai_ocr.cost.tracking import allocate_cu_usage_by_page
 from ai_ocr.model import Config
 from ai_ocr.paddle_gate import (
     assess_paddle_confidence,
@@ -140,8 +141,15 @@ def _merge_cu_usage(breakdowns: list[dict]) -> dict:
         rates = bd.get("rates") or rates
         source = bd.get("pricing_source") or source
     meter = next((tier for tier in ("standard", "basic", "minimal") if pages.get(tier)), None)
+    if llm_tokens:
+        call_type = "end_to_end"
+    elif ctx_tokens:
+        call_type = "field_extraction"
+    else:
+        call_type = "content_extraction"
     return {
         "meter": meter,
+        "call_type": call_type,
         "pages": pages,
         "total_pages": sum(pages.values()),
         "contextualization_tokens": ctx_tokens,
@@ -153,6 +161,16 @@ def _merge_cu_usage(breakdowns: list[dict]) -> dict:
         "total_usd": cu_usd + llm_usd,
         "pricing_source": source,
         "rates": rates,
+    }
+
+
+def _confidence_summary(confidence: dict[str, float]) -> dict[str, float | int | None]:
+    """Summarize a CU chunk's field confidence without duplicating its fields."""
+    scores = [float(score) for score in confidence.values() if isinstance(score, (int, float))]
+    return {
+        "field_count": len(scores),
+        "mean": round(sum(scores) / len(scores), 4) if scores else None,
+        "min": round(min(scores), 4) if scores else None,
     }
 
 
@@ -427,8 +445,16 @@ def handle_timeout_error_async(blob_input_stream: BlobInputStream, data_containe
     """Handle timeout error - same logic as original function"""
     document_id = blob_input_stream.name.replace("/", "__")
     try:
-        data_container.read_item(item=document_id, partition_key={})
-        logger.warning(f"Timeout occurred for document: {document_id}")
+        # Partition-agnostic lookup (documents may live in any logical partition).
+        found = list(
+            data_container.query_items(
+                query="SELECT c.id FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document_id}],
+                enable_cross_partition_query=True,
+            )
+        )
+        if found:
+            logger.warning(f"Timeout occurred for document: {document_id}")
     except Exception as e:
         logger.error(f"Error handling timeout for document {document_id}: {e}")
 
@@ -499,6 +525,29 @@ def initialize_document_data(blob_name: str, temp_file_path: str, num_pages: int
         max_pages_per_chunk,
         processing_options,
     )
+
+    # Preserve an existing document's logical partition so reprocessing never
+    # creates a cross-partition duplicate of the same id. Legacy documents were
+    # written without a partitionKey (the single "undefined" partition); keep
+    # them there until the migration script backfills them. New documents keep
+    # the dataset-based partitionKey assigned in initialize_document.
+    try:
+        existing = list(
+            data_container.query_items(
+                query="SELECT c.id, c.partitionKey FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document["id"]}],
+                enable_cross_partition_query=True,
+            )
+        )
+        if existing:
+            existing_pk = existing[0].get("partitionKey")
+            if existing_pk is None:
+                document.pop("partitionKey", None)
+            else:
+                document["partitionKey"] = existing_pk
+    except Exception as exc:  # noqa: BLE001 - partition preservation is best-effort
+        logger.warning("Could not resolve existing partition for %s: %s", document.get("id"), exc)
+
     update_state(document, data_container, "file_landed", True, (datetime.now() - timer_start).total_seconds())
     return document
 
@@ -752,6 +801,8 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             cu_confidence = {}
             cu_usable_images = False
             cu_usage_breakdowns: list[dict] = []
+            cu_chunks: list[dict] = []
+            page_metrics: list[dict] = []
             example_schema = document["model_input"]["example_schema"]
             dataset_name = document.get("dataset", "default")
             try:
@@ -796,10 +847,43 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                         chunk_pages * _cu_page_price(),
                     )
 
+                    breakdown = {
+                        "meter": "unknown",
+                        "pages": {},
+                        "extraction_usd": chunk_pages * _cu_page_price(),
+                        "contextualization_usd": 0.0,
+                        "llm_usd": 0.0,
+                    }
+
                 ocr_results.append(cu_result.get("ocr_output", ""))
                 extracted_data_list.append(cu_result.get("extracted_data", {}))
-                if cu_result.get("confidence"):
-                    cu_confidence[f"chunk_{i + 1}"] = cu_result["confidence"]
+                chunk_id = f"chunk_{i + 1}"
+                chunk_confidence = cu_result.get("confidence") or {}
+                if chunk_confidence:
+                    cu_confidence[chunk_id] = chunk_confidence
+                page_start = i * max_pages_per_chunk + 1
+                page_end = page_start + chunk_pages - 1
+                cu_chunks.append(
+                    {
+                        "id": chunk_id,
+                        "page_start": page_start,
+                        "page_end": page_end,
+                        "provenance_scope": "chunk",
+                        "output": cu_result.get("extracted_data", {}),
+                        "field_confidence": chunk_confidence,
+                        "confidence": _confidence_summary(chunk_confidence),
+                        "ocr_markdown": cu_result.get("ocr_output", ""),
+                    }
+                )
+                for metric in allocate_cu_usage_by_page(
+                    breakdown,
+                    page_start=page_start,
+                    page_count=chunk_pages,
+                    discount_pct=pricing["discount_pct"],
+                ):
+                    metric["chunk_id"] = chunk_id
+                    metric["provenance_scope"] = "chunk"
+                    page_metrics.append(metric)
                 total_ocr_time += cu_time
                 total_extraction_time += cu_time
 
@@ -832,6 +916,8 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
                 )
             if cu_confidence:
                 document["properties"]["content_understanding_confidence"] = cu_confidence
+            document["properties"]["content_understanding_chunks"] = cu_chunks
+            document["properties"]["page_metrics"] = page_metrics
 
             # Backend-agnostic preflight for Content Understanding: the GPT branch
             # flags BEFORE extraction, but CU extracts in one call, so here we

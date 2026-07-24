@@ -1,6 +1,6 @@
 /**
  * Backend API Client for ARGUS Frontend
- * 
+ *
  * This client provides type-safe methods for interacting with the ARGUS backend API.
  */
 
@@ -21,6 +21,7 @@ export interface CostStageUsage {
   input_tokens: number
   output_tokens: number
   usd: number
+  list_usd?: number
 }
 
 export interface Cost {
@@ -31,6 +32,7 @@ export interface Cost {
   usd_per_page: number
   pricing_source: PricingSource
   model_breakdown: Record<string, number>
+  list_model_breakdown?: Record<string, number>
   // Pricing UX: list (undiscounted Azure) price + applied agreement discount.
   // Older documents may omit these — `total_usd` then equals list price.
   list_total_usd?: number
@@ -44,8 +46,11 @@ export type DocumentCost = Cost
 
 // Meter-accurate Content Understanding usage captured from the CU `usage` block.
 // `meter` is the highest content-extraction tier exercised (the CU "level" used).
+// `call_type` is the processing depth: content extraction, field extraction, or
+// full end-to-end (generative).
 export interface CuUsage {
   meter?: "minimal" | "basic" | "standard" | null
+  call_type?: "content_extraction" | "field_extraction" | "end_to_end" | null
   pages?: { minimal?: number; basic?: number; standard?: number }
   total_pages?: number
   contextualization_tokens?: number
@@ -57,6 +62,40 @@ export interface CuUsage {
   total_usd?: number
   pricing_source?: PricingSource
   rates?: Record<string, number>
+}
+
+/** Equal-allocation CU accounting record for one physical page. */
+export interface PageMetric {
+  page_number: number
+  chunk_id: string
+  allocation_method: "equal_per_page_within_cu_chunk"
+  provenance_scope: "chunk"
+  meter?: string | null
+  meter_usage: Record<string, number>
+  list_meter_usd: number
+  list_contextualization_usd: number
+  list_llm_usd: number
+  list_estimated_all_in_usd: number
+  allocated_meter_usd: number
+  allocated_contextualization_usd: number
+  allocated_llm_usd: number
+  estimated_all_in_usd: number
+}
+
+/** Compact CU evidence shared by all pages in a multi-page analyze request. */
+export interface CuChunkEvidence {
+  id: string
+  page_start: number
+  page_end: number
+  provenance_scope: "chunk"
+  output: Record<string, unknown>
+  field_confidence: Record<string, number>
+  confidence: {
+    field_count: number
+    mean: number | null
+    min: number | null
+  }
+  ocr_markdown: string
 }
 
 export interface PricingSettings {
@@ -175,6 +214,19 @@ export interface DocumentProperties {
   extraction_backend_used?: ExtractionBackend
   cu_fallback?: CuFallback
   content_understanding_usage?: CuUsage
+  // Content Understanding per-chunk field confidence: { chunk_1: { field_path: score } }
+  content_understanding_confidence?: Record<string, Record<string, number>>
+  page_metrics?: PageMetric[]
+  content_understanding_chunks?: CuChunkEvidence[]
+}
+
+/** Aggregated OCR word-recognition confidence for a document. */
+export interface OcrConfidence {
+  n_words?: number
+  mean?: number
+  frac_low?: number
+  min?: number | null
+  word_min?: number | null
 }
 
 export interface DocumentExtractedData {
@@ -206,11 +258,18 @@ export interface Document {
   // Model configuration
   model_input?: Record<string, unknown>
   processing_options?: Record<string, boolean>
+  // Field-level extraction confidence: flat { field_path: score } map (0-1),
+  // merged server-side from Content Understanding per-chunk confidence.
+  field_confidence?: Record<string, number>
+  // Aggregated OCR word-recognition confidence (Azure Document Intelligence path).
+  ocr_confidence?: OcrConfidence | null
 }
 
 export interface DocumentsResponse {
   documents: Document[]
   count: number
+  // Cosmos continuation token for the next page (null when no more results).
+  continuation?: string | null
 }
 
 // Configuration types
@@ -399,7 +458,7 @@ export interface UploadOptions {
 
 /**
  * Backend API Client
- * 
+ *
  * Provides methods for interacting with the ARGUS backend API.
  */
 class BackendClient {
@@ -447,7 +506,7 @@ class BackendClient {
   ): Promise<T> {
     await this.initialize()
     const url = `${this.baseUrl}${endpoint}`
-    
+
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -470,11 +529,18 @@ class BackendClient {
   }
 
   // Document endpoints
-  async listDocuments(dataset?: string, limit?: number): Promise<DocumentsResponse> {
+  async listDocuments(
+    dataset?: string,
+    limit?: number,
+    continuation?: string | null,
+    lightweight = false,
+  ): Promise<DocumentsResponse> {
     const params = new URLSearchParams()
     if (dataset) params.append("dataset", dataset)
     if (limit) params.append("limit", limit.toString())
-    
+    if (continuation) params.append("continuation", continuation)
+    if (lightweight) params.append("lightweight", "true")
+
     const query = params.toString() ? `?${params.toString()}` : ""
     return this.fetch<DocumentsResponse>(`/api/documents${query}`)
   }

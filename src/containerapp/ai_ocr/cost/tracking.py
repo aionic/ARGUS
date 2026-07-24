@@ -13,6 +13,22 @@ PriceFunction = Callable[..., PricingResult | dict[str, Any]]
 _CU_METERS = ("minimal", "basic", "standard")
 
 
+def _classify_cu_call(total_pages: int, contextualization_tokens: int, llm_tokens: dict[str, Any]) -> str:
+    """Classify Content Understanding processing depth for cost transparency.
+
+    - ``content_extraction``: OCR/layout only (no field or generative work).
+    - ``field_extraction``:   structured field extraction (contextualization
+                              tokens) without generative LLM tokens.
+    - ``end_to_end``:         content + field extraction + generative LLM (the
+                              full ARGUS analyzer path).
+    """
+    if llm_tokens:
+        return "end_to_end"
+    if contextualization_tokens:
+        return "field_extraction"
+    return "content_extraction"
+
+
 @dataclass
 class _CostEntry:
     stage: str
@@ -128,9 +144,13 @@ class CostTracker:
 
         # Highest tier actually exercised describes the "level" of CU used.
         meter = next((tier for tier in reversed(_CU_METERS) if pages.get(tier)), None)
+        # The call type captures processing depth: content extraction only,
+        # structured field extraction, or full end-to-end (generative).
+        call_type = _classify_cu_call(total_pages, contextualization_tokens, llm_tokens)
 
         return {
             "meter": meter,
+            "call_type": call_type,
             "pages": {f"{meter}": count for meter, count in pages.items()},
             "total_pages": total_pages,
             "contextualization_tokens": contextualization_tokens,
@@ -190,7 +210,8 @@ class CostTracker:
         page_count = int(num_pages or 0)
         list_total_usd = total_usd
         pct = max(0.0, min(float(discount_pct or 0.0), 100.0))
-        net_total_usd = list_total_usd * (1.0 - pct / 100.0)
+        discount_factor = 1.0 - pct / 100.0
+        net_total_usd = list_total_usd * discount_factor
         return {
             "per_stage": [
                 {
@@ -198,7 +219,8 @@ class CostTracker:
                     "model": entry.model,
                     "input_tokens": entry.input_tokens,
                     "output_tokens": entry.output_tokens,
-                    "usd": entry.usd,
+                    "usd": entry.usd * discount_factor,
+                    **({"list_usd": entry.usd} if pct > 0 else {}),
                 }
                 for entry in grouped.values()
             ],
@@ -211,7 +233,8 @@ class CostTracker:
             "usd_per_page": net_total_usd / page_count if page_count > 0 else 0.0,
             "list_usd_per_page": list_total_usd / page_count if page_count > 0 else 0.0,
             "pricing_source": _aggregate_source(sources),
-            "model_breakdown": model_breakdown,
+            "model_breakdown": {model: usd * discount_factor for model, usd in model_breakdown.items()},
+            **({"list_model_breakdown": model_breakdown} if pct > 0 else {}),
         }
 
     def _resolve_price(self, model: str) -> PricingResult:
@@ -277,3 +300,59 @@ def _parse_llm_tokens(tokens: Any) -> dict[str, dict[str, int]]:
         entry = result.setdefault(model, {"input": 0, "output": 0})
         entry[direction] += value
     return result
+
+
+def allocate_cu_usage_by_page(
+    breakdown: dict[str, Any],
+    *,
+    page_start: int,
+    page_count: int,
+    discount_pct: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Allocate a CU chunk's priced components equally across its pages.
+
+    Content Understanding reports usage per analyze request, so the caller cannot
+    attribute contextualization or generative-token spend to an individual page.
+    This helper records that limitation explicitly while producing page records
+    that reconcile exactly to the chunk-level usage breakdown.
+    """
+    if page_count <= 0:
+        return []
+
+    list_components = {
+        "meter_usd": float(breakdown.get("extraction_usd") or 0.0),
+        "contextualization_usd": float(breakdown.get("contextualization_usd") or 0.0),
+        "llm_usd": float(breakdown.get("llm_usd") or 0.0),
+    }
+    discount_factor = 1.0 - max(0.0, min(float(discount_pct or 0.0), 100.0)) / 100.0
+    allocated_components = {name: 0.0 for name in list_components}
+    metrics: list[dict[str, Any]] = []
+
+    for offset in range(page_count):
+        is_final_page = offset == page_count - 1
+        allocation: dict[str, float] = {}
+        for name, amount in list_components.items():
+            share = amount - allocated_components[name] if is_final_page else amount / page_count
+            allocation[name] = share
+            allocated_components[name] += share
+
+        list_total = sum(allocation.values())
+
+        metrics.append(
+            {
+                "page_number": page_start + offset,
+                "allocation_method": "equal_per_page_within_cu_chunk",
+                "meter": breakdown.get("meter"),
+                "meter_usage": breakdown.get("pages") or {},
+                "list_meter_usd": allocation["meter_usd"],
+                "list_contextualization_usd": allocation["contextualization_usd"],
+                "list_llm_usd": allocation["llm_usd"],
+                "list_estimated_all_in_usd": list_total,
+                "allocated_meter_usd": allocation["meter_usd"] * discount_factor,
+                "allocated_contextualization_usd": allocation["contextualization_usd"] * discount_factor,
+                "allocated_llm_usd": allocation["llm_usd"] * discount_factor,
+                "estimated_all_in_usd": list_total * discount_factor,
+            }
+        )
+
+    return metrics

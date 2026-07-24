@@ -304,12 +304,28 @@ async def _handle_list_documents(arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text="Error: Data container not available. Check Azure connection.")]
 
     try:
+        try:
+            safe_limit = max(1, min(int(limit), 1000))
+        except (TypeError, ValueError):
+            safe_limit = 50
         if dataset:
-            query = f"SELECT TOP {limit} * FROM c WHERE c.dataset = '{dataset}'"
+            items = list(
+                data_container.query_items(
+                    query=(
+                        f"SELECT TOP {safe_limit} * FROM c "
+                        "WHERE c.dataset = @dataset AND NOT IS_DEFINED(c.kind)"
+                    ),
+                    parameters=[{"name": "@dataset", "value": dataset}],
+                    enable_cross_partition_query=True,
+                )
+            )
         else:
-            query = f"SELECT TOP {limit} * FROM c"
-
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+            items = list(
+                data_container.query_items(
+                    query=f"SELECT TOP {safe_limit} * FROM c WHERE NOT IS_DEFINED(c.kind)",
+                    enable_cross_partition_query=True,
+                )
+            )
 
         # Format documents for output
         documents = []
@@ -346,8 +362,13 @@ async def _handle_get_document(arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text="Error: Data container not available")]
 
     try:
-        query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+        items = list(
+            data_container.query_items(
+                query="SELECT * FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document_id}],
+                enable_cross_partition_query=True,
+            )
+        )
 
         if not items:
             return [TextContent(type="text", text=f"Document not found: {document_id}")]
@@ -394,8 +415,13 @@ async def _handle_chat_with_document(arguments: dict) -> list[TextContent]:
 
     try:
         # Fetch the document
-        query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+        items = list(
+            data_container.query_items(
+                query="SELECT * FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document_id}],
+                enable_cross_partition_query=True,
+            )
+        )
 
         if not items:
             return [TextContent(type="text", text=f"Document not found: {document_id}")]
@@ -584,8 +610,13 @@ async def _handle_get_extraction(arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text="Error: Data container not available")]
 
     try:
-        query = f"SELECT c.id, c.file_name, c.extracted_data FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+        items = list(
+            data_container.query_items(
+                query="SELECT c.id, c.file_name, c.extracted_data FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document_id}],
+                enable_cross_partition_query=True,
+            )
+        )
 
         if not items:
             return [TextContent(type="text", text=f"Document not found: {document_id}")]
@@ -618,13 +649,21 @@ async def _handle_search_documents(arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text="Error: Data container not available")]
 
     try:
-        # Get all documents (or filtered by dataset)
+        # Search across partitions so pre-migration documents remain visible.
         if dataset:
-            cosmos_query = f"SELECT * FROM c WHERE c.dataset = '{dataset}'"
+            items = list(
+                data_container.query_items(
+                    query="SELECT * FROM c WHERE c.dataset = @dataset AND NOT IS_DEFINED(c.kind)",
+                    parameters=[{"name": "@dataset", "value": dataset}],
+                    enable_cross_partition_query=True,
+                )
+            )
         else:
-            cosmos_query = "SELECT * FROM c"
-
-        items = list(data_container.query_items(query=cosmos_query, enable_cross_partition_query=True))
+            items = list(
+                data_container.query_items(
+                    query="SELECT * FROM c WHERE NOT IS_DEFINED(c.kind)", enable_cross_partition_query=True
+                )
+            )
 
         # Search in memory (Cosmos DB doesn't have great full-text search)
         matches = []

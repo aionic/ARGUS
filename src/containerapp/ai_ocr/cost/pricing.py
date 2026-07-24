@@ -483,6 +483,9 @@ def _read_cosmos_doc(container: Any | None, doc_id: str) -> dict[str, Any] | Non
 def _write_cosmos_price(container: Any | None, doc_id: str, result: PricingResult) -> None:
     doc = {
         "id": doc_id,
+        # Partition key must equal the id so reads (partition_key=doc_id) resolve;
+        # the container is partitioned on /partitionKey.
+        "partitionKey": doc_id,
         "kind": "aoai_token_price",
         "model": result.model,
         "region": result.region,
@@ -498,6 +501,9 @@ def _write_cosmos_price(container: Any | None, doc_id: str, result: PricingResul
 def _write_cosmos_di(container: Any | None, doc_id: str, result: PagePriceResult) -> None:
     doc = {
         "id": doc_id,
+        # Partition key must equal the id so reads (partition_key=doc_id) resolve;
+        # the container is partitioned on /partitionKey.
+        "partitionKey": doc_id,
         "kind": "di_page_price",
         "region": result.region,
         "usd_per_page": result.usd_per_page,

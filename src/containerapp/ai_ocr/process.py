@@ -205,6 +205,11 @@ def initialize_document(
 
     return {
         "id": file_name.replace("/", "__"),
+        # Partition documents by dataset. The Cosmos container's partition key
+        # path is /partitionKey; populating it distributes documents across
+        # logical partitions (legacy documents without it stay in the single
+        # "undefined" partition until backfilled by the migration script).
+        "partitionKey": dataset,
         "dataset": dataset,
         "properties": {
             "blob_name": file_name,

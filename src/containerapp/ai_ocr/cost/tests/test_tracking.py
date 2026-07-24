@@ -76,6 +76,10 @@ def test_cost_tracker_applies_agreement_discount() -> None:
     assert cost["total_usd"] == pytest.approx(0.002 * 0.72)
     assert cost["usd_per_page"] == pytest.approx(0.002 * 0.72)
     assert cost["list_usd_per_page"] == pytest.approx(0.002)
+    assert cost["per_stage"][0]["usd"] == pytest.approx(0.002 * 0.72)
+    assert cost["per_stage"][0]["list_usd"] == pytest.approx(0.002)
+    assert cost["model_breakdown"] == {"gpt-test": pytest.approx(0.002 * 0.72)}
+    assert cost["list_model_breakdown"] == {"gpt-test": pytest.approx(0.002)}
     assert cost["consumption_available"] is True
 
 
@@ -164,3 +168,41 @@ def test_record_cu_usage_ignores_empty_usage() -> None:
 
     assert breakdown["total_usd"] == pytest.approx(0.0)
     assert tracker.aggregate(num_pages=0)["per_stage"] == []
+
+
+def test_allocate_cu_usage_by_page_reconciles_chunk_costs() -> None:
+    from ai_ocr.cost.tracking import allocate_cu_usage_by_page
+
+    breakdown = {
+        "meter": "standard",
+        "pages": {"minimal": 0, "basic": 0, "standard": 3},
+        "extraction_usd": 0.015,
+        "contextualization_usd": 0.003,
+        "llm_usd": 0.006,
+    }
+
+    pages = allocate_cu_usage_by_page(breakdown, page_start=4, page_count=3)
+
+    assert [page["page_number"] for page in pages] == [4, 5, 6]
+    assert {page["allocation_method"] for page in pages} == {"equal_per_page_within_cu_chunk"}
+    assert sum(page["allocated_meter_usd"] for page in pages) == pytest.approx(0.015)
+    assert sum(page["allocated_contextualization_usd"] for page in pages) == pytest.approx(0.003)
+    assert sum(page["allocated_llm_usd"] for page in pages) == pytest.approx(0.006)
+    assert sum(page["estimated_all_in_usd"] for page in pages) == pytest.approx(0.024)
+
+
+def test_allocate_cu_usage_by_page_applies_discount_after_reconciliation() -> None:
+    from ai_ocr.cost.tracking import allocate_cu_usage_by_page
+
+    breakdown = {
+        "meter": "standard",
+        "pages": {"standard": 2},
+        "extraction_usd": 0.01,
+        "contextualization_usd": 0.002,
+        "llm_usd": 0.004,
+    }
+
+    pages = allocate_cu_usage_by_page(breakdown, page_start=1, page_count=2, discount_pct=25)
+
+    assert sum(page["list_estimated_all_in_usd"] for page in pages) == pytest.approx(0.016)
+    assert sum(page["estimated_all_in_usd"] for page in pages) == pytest.approx(0.012)

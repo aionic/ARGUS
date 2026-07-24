@@ -883,9 +883,14 @@ async def chat_with_document(request: Request):
             raise HTTPException(status_code=500, detail="Unable to connect to Cosmos DB")
 
         try:
-            # Fetch the document using a query (similar to frontend approach)
-            query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-            items = list(cosmos_container.query_items(query=query, enable_cross_partition_query=True))
+            # Fetch the document using a parameterized query (prevents NoSQL injection)
+            items = list(
+                cosmos_container.query_items(
+                    query="SELECT * FROM c WHERE c.id = @id",
+                    parameters=[{"name": "@id", "value": document_id}],
+                    enable_cross_partition_query=True,
+                )
+            )
 
             if not items:
                 raise HTTPException(status_code=404, detail="Document not found")
@@ -1189,11 +1194,19 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
                 return {"error": "Data container not available"}
 
             if dataset:
-                query = f"SELECT * FROM c WHERE c.dataset = '{dataset}'"
+                items = list(
+                    data_container.query_items(
+                        query="SELECT * FROM c WHERE c.dataset = @dataset AND NOT IS_DEFINED(c.kind)",
+                        parameters=[{"name": "@dataset", "value": dataset}],
+                        enable_cross_partition_query=True,
+                    )
+                )
             else:
-                query = "SELECT * FROM c"
-
-            items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+                items = list(
+                    data_container.query_items(
+                        query="SELECT * FROM c WHERE NOT IS_DEFINED(c.kind)", enable_cross_partition_query=True
+                    )
+                )
 
             documents = []
             for item in items:
@@ -1222,8 +1235,13 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
             if not data_container:
                 return {"error": "Data container not available"}
 
-            query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-            items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+            items = list(
+                data_container.query_items(
+                    query="SELECT * FROM c WHERE c.id = @id",
+                    parameters=[{"name": "@id", "value": document_id}],
+                    enable_cross_partition_query=True,
+                )
+            )
 
             if not items:
                 return {"error": "Document not found"}
@@ -1329,8 +1347,13 @@ async def _execute_mcp_tool(tool_name: str, arguments: dict) -> Any:
             if not data_container:
                 return {"error": "Data container not available"}
 
-            query = f"SELECT c.extracted_data.gpt_extraction_output FROM c WHERE c.id = '{document_id}'"
-            items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+            items = list(
+                data_container.query_items(
+                    query="SELECT c.extracted_data.gpt_extraction_output FROM c WHERE c.id = @id",
+                    parameters=[{"name": "@id", "value": document_id}],
+                    enable_cross_partition_query=True,
+                )
+            )
 
             if not items:
                 return {"error": "Document not found"}
@@ -1414,9 +1437,14 @@ async def submit_correction(document_id: str, request: Request):
             raise HTTPException(status_code=503, detail="Data container not available")
 
         try:
-            # Fetch the document using a query
-            query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-            items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+            # Fetch the document using a parameterized query (prevents NoSQL injection)
+            items = list(
+                data_container.query_items(
+                    query="SELECT * FROM c WHERE c.id = @id",
+                    parameters=[{"name": "@id", "value": document_id}],
+                    enable_cross_partition_query=True,
+                )
+            )
 
             if not items:
                 raise HTTPException(status_code=404, detail="Document not found")
@@ -1491,9 +1519,14 @@ async def get_correction_history(document_id: str):
             raise HTTPException(status_code=503, detail="Data container not available")
 
         try:
-            # Fetch the document using a query
-            query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-            items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+            # Fetch the document using a parameterized query (prevents NoSQL injection)
+            items = list(
+                data_container.query_items(
+                    query="SELECT * FROM c WHERE c.id = @id",
+                    parameters=[{"name": "@id", "value": document_id}],
+                    enable_cross_partition_query=True,
+                )
+            )
 
             if not items:
                 raise HTTPException(status_code=404, detail="Document not found")
@@ -1580,45 +1613,119 @@ async def get_concurrency_diagnostics():
 # ============================================================================
 
 
-async def list_documents(dataset: str = None):
-    """List all documents, optionally filtered by dataset"""
+def _document_list_item(item: dict, *, include_details: bool) -> dict:
+    """Transform a stored document without changing the list endpoint contract."""
+    extracted_data = item.get("extracted_data", {}) if include_details else {}
+    stored_properties = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+    if include_details:
+        properties = stored_properties
+    else:
+        properties = {
+            "blob_size": item.get("property_blob_size", stored_properties.get("blob_size")),
+            "request_timestamp": item.get(
+                "property_request_timestamp",
+                stored_properties.get("request_timestamp"),
+            ),
+            "num_pages": item.get("property_num_pages", stored_properties.get("num_pages")),
+            "total_time_seconds": item.get(
+                "property_total_time_seconds",
+                stored_properties.get("total_time_seconds"),
+            ),
+            "cost": item.get("property_cost", stored_properties.get("cost")),
+            "flag": item.get("property_flag", stored_properties.get("flag")),
+            "tier": item.get("property_tier", stored_properties.get("tier")),
+        }
+        properties = {key: value for key, value in properties.items() if value is not None}
+
+    return {
+        "id": item.get("id"),
+        "filename": item.get("file_name") or item.get("filename") or item.get("id", "").split("/")[-1],
+        "dataset": item.get("dataset", "default-dataset"),
+        "status": _get_document_status(item),
+        "created_at": item.get("created_at") or properties.get("request_timestamp"),
+        "updated_at": item.get("updated_at") or item.get("created_at") or properties.get("request_timestamp"),
+        "processing_time": item.get("processing_time") or item.get("processing_times", {}).get("total"),
+        "model": item.get("model"),
+        "ocr_text": item.get("ocr_response") or item.get("ocr_text") if include_details else None,
+        "gpt_extraction": extracted_data.get("gpt_extraction_output"),
+        "evaluation": item.get("evaluation_results") or item.get("evaluation") if include_details else None,
+        "summary": item.get("summary") if include_details else None,
+        "errors": item.get("errors"),
+        "num_pages": item.get("num_pages") or properties.get("num_pages"),
+        "properties": properties,
+        "state": item.get("state", {}),
+        "extracted_data": extracted_data,
+        "processing_options": item.get("processing_options", {}),
+    }
+
+
+async def list_documents(
+    dataset: str = None,
+    limit: int = 500,
+    continuation: str | None = None,
+    lightweight: bool = False,
+):
+    """List documents, preserving the legacy response unless lightweight paging is requested."""
     try:
         data_container = get_data_container()
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
 
-        if dataset:
-            query = f"SELECT * FROM c WHERE c.dataset = '{dataset}'"
-        else:
-            query = "SELECT * FROM c"
+        parameters = [{"name": "@dataset", "value": dataset}] if dataset else []
+        where_clause = " WHERE c.dataset = @dataset AND NOT IS_DEFINED(c.kind)" if dataset else " WHERE NOT IS_DEFINED(c.kind)"
 
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+        if not lightweight:
+            items = list(
+                data_container.query_items(
+                    query=f"SELECT * FROM c{where_clause}",
+                    parameters=parameters,
+                    enable_cross_partition_query=True,
+                )
+            )
+            documents = [_document_list_item(item, include_details=True) for item in items]
+            return {"documents": documents, "count": len(documents), "continuation": None}
 
-        # Transform documents to expected format
-        documents = []
-        for item in items:
-            doc = {
-                "id": item.get("id"),
-                "filename": item.get("file_name") or item.get("filename") or item.get("id", "").split("/")[-1],
-                "dataset": item.get("dataset", "default-dataset"),
-                "status": _get_document_status(item),
-                "created_at": _get_document_timestamp(item),
-                "updated_at": item.get("updated_at") or _get_document_timestamp(item),
-                "processing_time": item.get("processing_time") or item.get("processing_times", {}).get("total"),
-                "model": item.get("model"),
-                "ocr_text": item.get("ocr_response") or item.get("ocr_text"),
-                "gpt_extraction": item.get("extracted_data", {}).get("gpt_extraction_output"),
-                "evaluation": item.get("evaluation_results") or item.get("evaluation"),
-                "summary": item.get("summary"),
-                "errors": item.get("errors"),
-                "num_pages": item.get("num_pages") or item.get("properties", {}).get("num_pages"),
-                "properties": item.get("properties", {}),
-                "state": item.get("state", {}),
-                "extracted_data": item.get("extracted_data", {}),
-            }
-            documents.append(doc)
+        try:
+            page_size = max(1, min(int(limit), 1000))
+        except (TypeError, ValueError):
+            page_size = 500
 
-        return {"documents": documents, "count": len(documents)}
+        continuation = continuation or None
+
+        projection = (
+            "SELECT c.id, c.dataset, c.file_name, c.filename, c.state, "
+            "c.errors, c.model, c.created_at, c.updated_at, c.processing_time, "
+            "c.processing_times, c.processing_options, c.num_pages, "
+            "c.properties.blob_size AS property_blob_size, "
+            "c.properties.request_timestamp AS property_request_timestamp, "
+            "c.properties.num_pages AS property_num_pages, "
+            "c.properties.total_time_seconds AS property_total_time_seconds, "
+            "c.properties.cost AS property_cost, "
+            "c.properties.flag AS property_flag, "
+            "c.properties.tier AS property_tier FROM c"
+        )
+        query = f"{projection}{where_clause} ORDER BY c._ts DESC"
+        iterator = data_container.query_items(
+            query=query,
+            parameters=parameters,
+            max_item_count=page_size,
+            enable_cross_partition_query=True,
+        )
+        page_iter = iterator.by_page(continuation_token=continuation)
+        page = next(page_iter, [])
+        items = list(page)
+        next_continuation = getattr(page_iter, "continuation_token", None)
+
+        total_items = list(
+            data_container.query_items(
+                query=f"SELECT VALUE COUNT(1) FROM c{where_clause}",
+                parameters=parameters,
+                enable_cross_partition_query=True,
+            )
+        )
+        total_count = int(total_items[0]) if total_items else 0
+        documents = [_document_list_item(item, include_details=False) for item in items]
+        return {"documents": documents, "count": total_count, "continuation": next_continuation}
 
     except HTTPException:
         raise
@@ -1881,6 +1988,67 @@ def _get_document_timestamp(item: dict) -> str | None:
     )
 
 
+def _merge_field_confidence(properties: dict) -> dict:
+    """Flatten Content Understanding per-chunk field confidence into a single
+    ``{field_path: score}`` map, keeping the lowest score on collision so the UI
+    surfaces the most conservative confidence per field."""
+    merged: dict[str, float] = {}
+    cu_conf = (properties or {}).get("content_understanding_confidence") or {}
+    if isinstance(cu_conf, dict):
+        for chunk in cu_conf.values():
+            if not isinstance(chunk, dict):
+                continue
+            for path, score in chunk.items():
+                if isinstance(score, (int, float)) and not isinstance(score, bool):
+                    score = float(score)
+                    merged[path] = min(merged[path], score) if path in merged else score
+    return merged
+
+
+def _summarize_ocr_confidence(properties: dict) -> dict | None:
+    """Aggregate per-chunk OCR word-confidence stats into a document-level summary."""
+    persisted = (properties or {}).get("ocr_confidence")
+    if isinstance(persisted, dict) and int(persisted.get("n_words") or 0) > 0:
+        return {
+            "n_words": int(persisted.get("n_words") or 0),
+            "mean": persisted.get("mean"),
+            "frac_low": persisted.get("frac_low"),
+            "min": persisted.get("min"),
+            "word_min": persisted.get("word_min"),
+        }
+
+    chunks = (properties or {}).get("_ocr_conf_chunks") or []
+    if not isinstance(chunks, list) or not chunks:
+        return None
+    total_words = 0
+    weighted_mean = 0.0
+    weighted_low = 0.0
+    min_conf = None
+    word_min = None
+    for stat in chunks:
+        if not isinstance(stat, dict):
+            continue
+        n = int(stat.get("n_words") or 0)
+        if n <= 0:
+            continue
+        total_words += n
+        weighted_mean += float(stat.get("mean") or 0.0) * n
+        weighted_low += float(stat.get("frac_low") or 0.0) * n
+        cmin = stat.get("min")
+        if isinstance(cmin, (int, float)):
+            min_conf = cmin if min_conf is None else min(min_conf, cmin)
+        word_min = stat.get("word_min", word_min)
+    if total_words <= 0:
+        return None
+    return {
+        "n_words": total_words,
+        "mean": round(weighted_mean / total_words, 4),
+        "frac_low": round(weighted_low / total_words, 4),
+        "min": round(min_conf, 4) if isinstance(min_conf, (int, float)) else None,
+        "word_min": word_min,
+    }
+
+
 async def get_document(document_id: str):
     """Get a specific document by ID"""
     try:
@@ -1888,9 +2056,14 @@ async def get_document(document_id: str):
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
 
-        # Query for the document
-        query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+        # Fetch the document using a parameterized query (prevents NoSQL injection)
+        items = list(
+            data_container.query_items(
+                query="SELECT * FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document_id}],
+                enable_cross_partition_query=True,
+            )
+        )
 
         if not items:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -1921,6 +2094,8 @@ async def get_document(document_id: str):
             "blob_url": item.get("blob_url"),
             "human_corrected": item.get("human_corrected", False),
             "corrections": item.get("corrections", []),
+            "field_confidence": _merge_field_confidence(item.get("properties", {})),
+            "ocr_confidence": _summarize_ocr_confidence(item.get("properties", {})),
         }
 
         return doc
@@ -1939,18 +2114,25 @@ async def delete_document(document_id: str):
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
 
-        # First find the document to get its info
-        query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+        # First find the document to get its info (parameterized to prevent injection)
+        items = list(
+            data_container.query_items(
+                query="SELECT * FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document_id}],
+                enable_cross_partition_query=True,
+            )
+        )
 
         if not items:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        # Delete the document using empty partition key (matches container config)
-        data_container.delete_item(item=document_id, partition_key={})
+        # Delete using the document's actual partition key (dataset for migrated
+        # documents, or the legacy "undefined" partition for older ones).
+        item = items[0]
+        partition_key = item.get("partitionKey")
+        data_container.delete_item(item=document_id, partition_key=partition_key if partition_key is not None else {})
 
         # Also try to delete from blob storage
-        item = items[0]
         blob_name = item.get("properties", {}).get("blob_name") or item.get("file_name")
         if blob_name:
             try:
@@ -1983,9 +2165,14 @@ async def reprocess_document(document_id: str, background_tasks: BackgroundTasks
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
 
-        # Find the document
-        query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+        # Find the document (parameterized to prevent injection)
+        items = list(
+            data_container.query_items(
+                query="SELECT * FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document_id}],
+                enable_cross_partition_query=True,
+            )
+        )
 
         if not items:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -2279,9 +2466,14 @@ async def get_document_file(document_id: str):
         if not data_container:
             raise HTTPException(status_code=503, detail="Data container not available")
 
-        # Find the document
-        query = f"SELECT * FROM c WHERE c.id = '{document_id}'"
-        items = list(data_container.query_items(query=query, enable_cross_partition_query=True))
+        # Find the document (parameterized to prevent injection)
+        items = list(
+            data_container.query_items(
+                query="SELECT * FROM c WHERE c.id = @id",
+                parameters=[{"name": "@id", "value": document_id}],
+                enable_cross_partition_query=True,
+            )
+        )
 
         if not items:
             raise HTTPException(status_code=404, detail="Document not found")
