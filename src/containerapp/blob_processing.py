@@ -178,7 +178,7 @@ def _quality_flagging_enabled() -> bool:
     """Whether OpenCV image-quality metrics should *route/flag* documents.
 
     Default OFF. Our experiments showed the cv2 pixel metrics are an unreliable
-    legibility gate — they missed the genuinely-bad scan (bad.png) yet false-flagged
+    legibility gate — they missed the historical degraded target alias (bad.png) yet false-flagged
     ~89% of legitimate sparse B&W claim forms before per-dataset tuning. The PaddleOCR
     pre-gate and the Document Intelligence word-confidence backstop now own the block
     decision (recognition confidence, not pixel statistics). cv2 metrics are still
@@ -805,6 +805,9 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             page_metrics: list[dict] = []
             example_schema = document["model_input"]["example_schema"]
             dataset_name = document.get("dataset", "default")
+            cu_analyzer_options = processing_options.get("content_understanding")
+            if not isinstance(cu_analyzer_options, dict):
+                cu_analyzer_options = {}
             try:
                 schema_obj = example_schema if isinstance(example_schema, dict) else json.loads(example_schema)
             except (TypeError, ValueError):
@@ -813,7 +816,13 @@ def process_blob(blob_input_stream: BlobInputStream, data_container):
             for i, file_path in enumerate(file_paths):
                 logger.info(f"Content Understanding analysis for chunk {i + 1}/{len(file_paths)}")
                 cu_start = datetime.now()
-                cu_result = get_cu_extraction(file_path, schema_obj, dataset_name, None)
+                cu_result = get_cu_extraction(
+                    file_path,
+                    schema_obj,
+                    dataset_name,
+                    None,
+                    analyzer_options=cu_analyzer_options,
+                )
                 cu_time = (datetime.now() - cu_start).total_seconds()
                 chunk_pages = _chunk_page_count(i, file_paths, max_pages_per_chunk, num_pages)
                 cu_usage = cu_result.get("usage") or {}

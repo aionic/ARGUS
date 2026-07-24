@@ -84,7 +84,13 @@ def summarize_word_confidence(result, word_min: float = 0.70) -> dict | None:
     }
 
 
-def get_read_confidence(file_path: str, cosmos_config_container=None, word_min: float = 0.70) -> dict | None:
+def get_read_confidence(
+    file_path: str,
+    cosmos_config_container=None,
+    word_min: float = 0.70,
+    *,
+    raise_on_error: bool = False,
+) -> dict | None:
     """Run the lightweight ``prebuilt-read`` model purely to capture OCR word confidence.
 
     Used by the preflight gate on any extraction backend (including Content
@@ -101,4 +107,6 @@ def get_read_confidence(file_path: str, cosmos_config_container=None, word_min: 
         return summarize_word_confidence(poller.result(), word_min=word_min)
     except Exception as exc:  # noqa: BLE001 - preflight probe must never break processing
         logger.warning(f"OCR read-confidence probe failed for {file_path}: {exc}")
+        if raise_on_error:
+            raise
         return None

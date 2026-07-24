@@ -1,0 +1,79 @@
+{
+  "dataset": "cms1500-claims",
+  "extraction": {
+    "documents_scored": 6,
+    "field_accuracy_micro": 0.4400871459694989,
+    "nonempty_fields_total": 459,
+    "nonempty_fields_correct": 202,
+    "per_doc_accuracy": {
+      "20211210NE1000031_nfnb.00000.tif.json": 0.3888888888888889,
+      "20211210NE1000044_nfnb.00000.tif.json": 0.41379310344827586,
+      "20211210NE1000226_nfnb.00000.tif.json": 0.42168674698795183,
+      "20211210NE1000294_nfnb.00000.tif.json": 0.4444444444444444,
+      "20211210NE1000800_nfnb.00000.tif.json": 0.6025641025641025,
+      "20211210NE1000884_nfnb.00000.tif.json": 0.37142857142857144
+    },
+    "worst_fields": [
+      [
+        "od_attend_2",
+        0.0
+      ],
+      [
+        "od_ein_1",
+        0.0
+      ],
+      [
+        "od_icd_ind_1",
+        0.0
+      ],
+      [
+        "od_id_number_1",
+        0.0
+      ],
+      [
+        "od_ins_name_1",
+        0.0
+      ],
+      [
+        "od_ins_plan_1",
+        0.0
+      ],
+      [
+        "od_prov_2",
+        0.0
+      ],
+      [
+        "od_prov_3",
+        0.0
+      ],
+      [
+        "od_prov_bottom_left_1",
+        0.0
+      ],
+      [
+        "od_rel_to_acc_n_1",
+        0.0
+      ],
+      [
+        "od_rel_to_job_n_1",
+        0.0
+      ],
+      [
+        "od_rel_to_oth_n_1",
+        0.0
+      ],
+      [
+        "od_render_2",
+        0.0
+      ],
+      [
+        "od_render_3",
+        0.0
+      ],
+      [
+        "od_render_bottom_left_1",
+        0.0
+      ]
+    ]
+  }
+}

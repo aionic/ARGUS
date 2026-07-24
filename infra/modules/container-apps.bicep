@@ -180,6 +180,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'STORAGE_ACCOUNT_NAME', value: storageAccountName }
             { name: 'BLOB_ACCOUNT_URL', value: blobEndpoint }
             { name: 'CONTAINER_NAME', value: containerName }
+            { name: 'EVALUATION_BLOB_CONTAINER', value: containerName }
+            { name: 'EVALUATION_CORPUS_BLOB_PREFIX', value: 'evaluation/corpus/conduent-v1' }
             { name: 'COSMOS_URL', value: cosmosEndpoint }
             { name: 'COSMOS_DB_NAME', value: cosmosDatabaseName }
             { name: 'COSMOS_DOCUMENTS_CONTAINER_NAME', value: cosmosContainerName }

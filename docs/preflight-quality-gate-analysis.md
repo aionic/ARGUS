@@ -6,8 +6,14 @@
 **Status:** Shipped (commit `6f68081`).
 **Scope:** Document-level preflight "is this scan legible enough to extract?" gate.
 **Backends covered:** Content Understanding (CU) and Document Intelligence + GPT.
-**Validation corpus:** 37 Conduent CMS-1500 / semi-structured invoice samples
-(`demo/cms1500-claims/samples/`), 22 of which have ground-truth labels.
+**Historical validation corpus:** 37 Conduent CMS-1500 / semi-structured
+invoice samples, now consolidated under `demo/conduent-datasets`.
+
+> **Dataset correction:** `bad.png` is pixel-identical to
+> `WO7U9NJQprod.tiff`, so it is not an independent labeled-bad sample. The
+> measurements below remain useful historical evidence, but recall figures that
+> treat the alias as a separate negative must not be used as final bake-off
+> quality claims.
 
 ---
 
@@ -15,8 +21,9 @@
 
 The pipeline should **flag** documents that are too degraded to extract well and route
 them to human review (and the auto-generated "bad scan" email workflow) **before**
-burning extraction tokens on them. The canonical bad input is `bad.png`: a faint,
-skewed invoice scan with heavy black edge-bleed on the right margin.
+burning extraction tokens on them. The historical degraded target was the
+`bad.png` alias: a faint invoice scan with heavy black edge-bleed on the right
+margin.
 
 The original gate relied on OpenCV global image statistics (blur, contrast,
 brightness, skew) plus, on the CU backend, the CU field-confidence map. Neither
@@ -290,4 +297,3 @@ OpenCV's pixel metrics are **demoted from gating to advisory**:
   them. This remains available but **opt-in** (`enable_enhancement`) and unvalidated on
   this corpus — it should be A/B'd against extraction accuracy before being relied upon,
   since aggressive denoise can erase faint handwriting.
-

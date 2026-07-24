@@ -1,6 +1,6 @@
 """CMS-1500 claims extraction scoring harness.
 
-Runs the Conduent synthetic CMS-1500 samples in ``demo/cms1500-claims`` through
+Runs the canonical Conduent CMS-1500 samples in ``demo/conduent-datasets`` through
 the ARGUS pipeline and scores the extracted ``od_*`` fields against the
 ground-truth CSVs, with normalized (format-insensitive) comparison.
 
@@ -18,15 +18,13 @@ Modes
   (one ``<ImageName>.json`` per document) against the truth CSVs. No Azure needed.
 * ``--self-test``   Validate the normalizer + scorer on synthetic data and exit.
 
-Truth files (``demo/cms1500-claims/ground-truth/{BW,Red} Truth.csv``) are
-cp1252/latin-1 encoded; the ``ImageName`` column is upper-cased relative to the
-on-disk sample filenames, so matching is case-insensitive.
+Samples and truth are loaded from the canonical CMS manifest and normalized truth
+JSONL. The archived source CSVs are retained only for provenance.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import re
 import sys
@@ -35,12 +33,17 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+CONTAINERAPP_ROOT = REPO_ROOT / "src" / "containerapp"
+sys.path.insert(0, str(CONTAINERAPP_ROOT))
+
+from evaluation.corpus import ConduentCorpus  # noqa: E402
+
 DATASET = "cms1500-claims"
-SAMPLES_DIR = REPO_ROOT / "demo" / DATASET / "samples"
-TRUTH_DIR = REPO_ROOT / "demo" / DATASET / "ground-truth"
-TRUTH_FILES = ["BW Truth.csv", "Red Truth.csv"]
-# bad.png is the only sample known to be a genuinely degraded scan -> should flag.
-KNOWN_BAD_SAMPLES = {"BAD.PNG"}
+CORPUS_DATASET = "cms1500"
+CORPUS_ROOT = REPO_ROOT / "demo" / "conduent-datasets"
+# The archived bad.png is pixel-identical to a commercial sample, so it is not
+# treated as an independent labeled negative.
+KNOWN_BAD_SAMPLES: set[str] = set()
 
 _PUNCT_RE = re.compile(r"[\s.,/\\:#()\-_$]+")
 
@@ -68,22 +71,16 @@ def image_key(name: str) -> str:
     return name.strip().upper()
 
 
-def load_truth(truth_dir: Path = TRUTH_DIR) -> dict[str, dict[str, str]]:
-    """Load both truth CSVs keyed by upper-cased ImageName -> {od_field: value}."""
-    truth: dict[str, dict[str, str]] = {}
-    for fname in TRUTH_FILES:
-        path = truth_dir / fname
-        if not path.exists():
-            continue
-        with path.open("r", encoding="latin-1", newline="") as handle:
-            reader = csv.DictReader(handle)
-            for row in reader:
-                name = (row.get("ImageName") or "").strip()
-                if not name:
-                    continue
-                fields = {k: (v or "") for k, v in row.items() if k and k != "ImageName"}
-                truth[image_key(name)] = fields
-    return truth
+def load_truth(
+    corpus_root: Path = CORPUS_ROOT,
+    splits: set[str] | None = None,
+) -> dict[str, dict[str, str]]:
+    """Load canonical CMS truth keyed by case-insensitive original filename."""
+    corpus = ConduentCorpus(corpus_root)
+    return {
+        image_key(case.original_filename): case.truth or {}
+        for case in corpus.iter_cases([CORPUS_DATASET], splits or {"tuning", "calibration"})
+    }
 
 
 def flatten_extraction(extracted: Any) -> dict[str, str]:
@@ -181,7 +178,7 @@ def aggregate(doc_scores: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 
 def preflight_report(flags: dict[str, dict | None]) -> dict[str, Any]:
-    """Summarize preflight precision/recall using bad.png as the known positive."""
+    """Summarize flags without inventing a negative label for the duplicate bad.png."""
     flagged = {name for name, flag in flags.items() if flag and flag.get("flagged")}
     known_bad = {name for name in flags if image_key(name) in KNOWN_BAD_SAMPLES}
     known_good = set(flags) - known_bad
@@ -207,10 +204,15 @@ def preflight_report(flags: dict[str, dict | None]) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Runners
 # --------------------------------------------------------------------------- #
-def _sample_paths() -> list[Path]:
-    if not SAMPLES_DIR.exists():
-        raise FileNotFoundError(f"Samples directory not found: {SAMPLES_DIR}")
-    return sorted(p for p in SAMPLES_DIR.iterdir() if p.is_file())
+def _sample_paths(splits: set[str] | None = None) -> list[Path]:
+    corpus = ConduentCorpus(CORPUS_ROOT)
+    return [
+        case.document_path
+        for case in corpus.iter_cases(
+            [CORPUS_DATASET],
+            splits or {"tuning", "calibration"},
+        )
+    ]
 
 
 def run_local(tiers: list[str], limit: int | None) -> dict[str, Any]:
@@ -361,8 +363,8 @@ def self_test() -> int:
     nested = flatten_extraction({"gpt_extraction_output": {"pages_1": {"od_pat_name_1": "X"}}})
     assert nested == {"od_pat_name_1": "X"}, nested
 
-    pf = preflight_report({"bad.png": {"flagged": True}, "good.tif": None})
-    assert pf["true_positives"] == 1 and pf["false_positives"] == 0 and pf["recall_on_known_bad"] == 1.0, pf
+    pf = preflight_report({"duplicate-bad-alias.png": {"flagged": True}, "good.tif": None})
+    assert pf["known_bad"] == [] and pf["recall_on_known_bad"] is None, pf
 
     agg = aggregate({"d": perfect})
     assert agg["documents_scored"] == 1 and agg["field_accuracy_micro"] == 1.0, agg

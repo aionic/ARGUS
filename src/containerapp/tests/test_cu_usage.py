@@ -46,3 +46,37 @@ def test_normalize_result_surfaces_usage() -> None:
     assert result["usage"]["documentPagesStandard"] == 2
     assert result["usage"]["tokens"] == {"gpt-4.1-input": 100, "gpt-4.1-output": 10}
     assert result["ocr_output"] == "hello"
+
+
+def test_schema_guidance_applies_descriptions_methods_and_selective_confidence() -> None:
+    schema = {"Invoice Number": "", "Table": {"Total": 0.0}}
+    options = {
+        "humanize_field_names": True,
+        "confidence_fields": ["Invoice Number"],
+        "field_hints": {
+            "Table.Total": {
+                "description": "Final invoice amount payable.",
+                "method": "extract",
+            }
+        },
+    }
+
+    field_schema = cu._build_field_schema("invoice", schema, options)
+
+    invoice_number = field_schema["fields"]["Invoice_Number"]
+    assert invoice_number["description"] == "Invoice Number"
+    assert invoice_number["method"] == "extract"
+    assert invoice_number["estimateSourceAndConfidence"] is True
+    total = field_schema["fields"]["Table"]["properties"]["Total"]
+    assert total["description"] == "Final invoice amount payable."
+    assert total["method"] == "extract"
+    assert total["estimateSourceAndConfidence"] is True
+
+
+def test_analyzer_id_changes_with_processing_configuration() -> None:
+    settings = {"base_analyzer_id": "prebuilt-document"}
+    field_schema = cu._build_field_schema("invoice", {"Total": 0.0})
+    baseline = cu._build_analyzer_definition(settings, field_schema)
+    cheaper = cu._build_analyzer_definition(settings, field_schema, {"config": {"enableLayout": False}})
+
+    assert cu._analyzer_id("invoice", baseline) != cu._analyzer_id("invoice", cheaper)

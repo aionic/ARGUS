@@ -1,0 +1,75 @@
+{
+  "split_version": "1.0.0",
+  "policy": {
+    "cms1500": "4 tuning, 4 calibration, and 14 holdout documents, stratified across the six BW/nfnb and sixteen Red/dfnc forms.",
+    "commercial-documents": "2 tuning, 1 calibration, and 4 holdout documents.",
+    "enrollments": "All four handwritten forms are holdout for the primary zero-shot result. Leave-one-out experiments must be reported separately.",
+    "invoice-demo": "Legacy synthetic invoice and public truth are tuning-only.",
+    "medical-demo": "Schema-only development sample; excluded from accuracy scoring.",
+    "unlabeled": "Development-only OCR and scan-quality samples; excluded from extraction accuracy."
+  },
+  "expected_counts": {
+    "cms1500": {
+      "tuning": 4,
+      "calibration": 4,
+      "holdout": 14
+    },
+    "commercial-documents": {
+      "tuning": 2,
+      "calibration": 1,
+      "holdout": 4
+    },
+    "enrollments": {
+      "holdout": 4
+    },
+    "invoice-demo": {
+      "tuning": 1
+    },
+    "medical-demo": {
+      "development": 1
+    },
+    "unlabeled": {
+      "development": 3
+    }
+  },
+  "documents": {
+    "cms1500-0a62dcfbbfd7": "tuning",
+    "cms1500-20be38a1f049": "calibration",
+    "cms1500-f578d023b9c4": "holdout",
+    "cms1500-801a7e69d26b": "holdout",
+    "cms1500-ad03403f8e49": "holdout",
+    "cms1500-1c0e6579a28c": "holdout",
+    "cms1500-6450426684f1": "tuning",
+    "cms1500-1b22cbf82824": "tuning",
+    "cms1500-2bfb48846960": "tuning",
+    "cms1500-7bda31d5ffde": "calibration",
+    "cms1500-c8404df9afa9": "calibration",
+    "cms1500-335dcfb992ec": "calibration",
+    "cms1500-76719fd45e88": "holdout",
+    "cms1500-4f741ad03aed": "holdout",
+    "cms1500-3d997f7829dd": "holdout",
+    "cms1500-ab9019e6a6cd": "holdout",
+    "cms1500-3a1435426b2a": "holdout",
+    "cms1500-c4799ceb84b8": "holdout",
+    "cms1500-12f97dcfcbc6": "holdout",
+    "cms1500-1da968c776a8": "holdout",
+    "cms1500-01629d8543a9": "holdout",
+    "cms1500-48814e5dd4b6": "holdout",
+    "commercial-1a98e5d5a451": "tuning",
+    "commercial-f33617ffaba8": "tuning",
+    "commercial-58cb7c60d329": "calibration",
+    "commercial-11cc48afe791": "holdout",
+    "commercial-7feeed7eacee": "holdout",
+    "commercial-db39203fcd7b": "holdout",
+    "commercial-2a59cbc6d462": "holdout",
+    "enrollment-fd2efeb1d804": "holdout",
+    "enrollment-c5194ced2746": "holdout",
+    "enrollment-c6dfe698c483": "holdout",
+    "enrollment-64ce53a34565": "holdout",
+    "invoice-demo-70e3cb303c67": "tuning",
+    "medical-demo-9fe747a3f24a": "development",
+    "unlabeled-e0f6f63d093f": "development",
+    "unlabeled-1b0bfad2d54a": "development",
+    "unlabeled-85d6ba70bc97": "development"
+  }
+}

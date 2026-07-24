@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import tempfile
 import threading
 from collections import Counter
 from collections.abc import Iterable, Sequence
@@ -13,10 +14,16 @@ from pathlib import Path
 from typing import Any
 
 from ai_ocr.tiers import ALLOWED_TIERS
+from evaluation.blob_io import download_prefix
+from evaluation.corpus import ConduentCorpus
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATASET = "default-dataset"
+CORPUS_DATASET_ALIASES = {
+    "default-dataset": "invoice-demo",
+    "cms1500-claims": "cms1500",
+}
 DEFAULT_TIERS = ["economy", "standard", "premium"]
 DOCUMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 _PROCESSING_ENTRYPOINT_LOCK = threading.Lock()
@@ -149,24 +156,25 @@ def normalize_tiers(tiers: Sequence[str] | str | None) -> list[str]:
     return normalized or list(DEFAULT_TIERS)
 
 
-def _candidate_demo_roots(demo_root: str | Path | None) -> list[Path]:
-    """Demo roots in priority order.
-
-    Supports running from the repo (``<repo>/demo``) and from the deployed
-    container image, where only a curated sample set is bundled next to this
-    module (``<module_dir>/bundled_samples``). An explicit ``PROFILING_DEMO_ROOT``
-    env var overrides both.
-    """
+def _candidate_corpus_roots(demo_root: str | Path | None) -> list[Path]:
+    """Canonical corpus roots in priority order."""
     if demo_root:
         return [Path(demo_root)]
     roots: list[Path] = []
-    env_root = os.environ.get("PROFILING_DEMO_ROOT")
+    env_root = os.environ.get("CONDUENT_CORPUS_ROOT") or os.environ.get("PROFILING_DEMO_ROOT")
     if env_root:
         roots.append(Path(env_root))
     repo_root = _repo_root()
     if repo_root is not None:
-        roots.append(repo_root / "demo")
-    roots.append(Path(__file__).resolve().parent / "bundled_samples")
+        roots.append(repo_root / "demo" / "conduent-datasets")
+    account_url = os.getenv("BLOB_ACCOUNT_URL")
+    container_name = os.getenv("EVALUATION_BLOB_CONTAINER")
+    prefix = os.getenv("EVALUATION_CORPUS_BLOB_PREFIX")
+    if account_url and container_name and prefix:
+        destination = Path(tempfile.gettempdir()) / "conduent-datasets"
+        if not (destination / "catalog.json").exists():
+            download_prefix(account_url, container_name, prefix, destination)
+        roots.append(destination)
     return roots
 
 
@@ -175,25 +183,56 @@ def resolve_profile_sources(
     files: Sequence[str] | None = None,
     demo_root: str | Path | None = None,
 ) -> list[ProfilingSource]:
-    candidate_roots = _candidate_demo_roots(demo_root)
-    dataset_dir = next(
-        (root / dataset for root in candidate_roots if (root / dataset).exists()),
-        candidate_roots[0] / dataset,
-    )
-    if files:
-        return [_resolve_source(dataset_dir, file_spec) for file_spec in files]
+    if files and all(str(file_spec).strip().startswith(("http://", "https://")) for file_spec in files):
+        return [_resolve_source(Path(), file_spec) for file_spec in files]
 
-    if not dataset_dir.exists():
-        searched = ", ".join(str(root / dataset) for root in candidate_roots)
-        raise FileNotFoundError(f"Demo dataset directory not found for '{dataset}'. Searched: {searched}")
+    candidate_roots = _candidate_corpus_roots(demo_root)
+    corpus = next(
+        (
+            ConduentCorpus(root)
+            for root in candidate_roots
+            if (root / "catalog.json").exists() and (root / "datasets").is_dir()
+        ),
+        None,
+    )
+    if corpus is None:
+        searched = ", ".join(str(root) for root in candidate_roots) or "<none>"
+        raise FileNotFoundError(f"Canonical Conduent corpus not found. Searched: {searched}")
+
+    corpus_dataset = CORPUS_DATASET_ALIASES.get(dataset, dataset)
+    cases = corpus.iter_cases([corpus_dataset], golden_only=False)
+    if files:
+        by_name = {case.original_filename.lower(): case for case in cases}
+        by_id = {case.document_id.lower(): case for case in cases}
+        sources = []
+        for file_spec in files:
+            spec = str(file_spec).strip()
+            path = Path(spec)
+            if path.is_absolute() and path.is_file():
+                sources.append(_resolve_source(Path(), spec))
+                continue
+            case = by_name.get(spec.lower()) or by_id.get(spec.lower())
+            if not case:
+                raise FileNotFoundError(f"Profiling document not found in {corpus_dataset}: {spec}")
+            sources.append(
+                ProfilingSource(
+                    label=case.document_id,
+                    file_name=case.original_filename,
+                    path=case.document_path,
+                )
+            )
+        return sources
 
     sources = [
-        ProfilingSource(label=path.name, file_name=path.name, path=path)
-        for path in sorted(dataset_dir.iterdir())
-        if path.is_file() and path.suffix.lower() in DOCUMENT_EXTENSIONS
+        ProfilingSource(
+            label=case.document_id,
+            file_name=case.original_filename,
+            path=case.document_path,
+        )
+        for case in cases
     ]
     if not sources:
-        raise FileNotFoundError(f"No demo documents found for dataset '{dataset}' in {dataset_dir}")
+        raise FileNotFoundError(f"No documents found for canonical dataset '{corpus_dataset}'")
     return sources
 
 

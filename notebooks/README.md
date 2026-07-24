@@ -31,7 +31,8 @@ uv sync
 
 ### Notebook flow
 
-1. Run ARGUS on an Invoice sample from the demo/default-dataset folder
+1. Run ARGUS on the canonical invoice sample under
+   `demo/conduent-datasets/datasets/invoice-demo/documents`
 2. Saves the output in json format
 3. Run evaluation using LLM as a judge without ground truth data
 4. Run evaluation using ground truth
@@ -49,12 +50,16 @@ The ratio is calculated based on the total number of strings being matched betwe
 
 The [prompt flow evaluation API](https://microsoft.github.io/promptflow/reference/python-library-reference/promptflow-evals/promptflow.evals.evaluate.html) is used for evaluating the ground truth against the actual data. The `evaluate` function accepts the evaluation data in the form of `jsonl` and contains the keys `ground_truth`, `actual`, and optionally `eval_schema`. The notebook compiles the ground truth, actual and evaluation schema data into the jsonl format using the `compile_jsonl` function.
 
-The notebook will create the actual data. To update the [ground truth](../demo/default-dataset/ground_truth.json) and evaluation [schema](../), modify the respective files directly.
+The notebook will create the actual data. The legacy notebook evaluator inputs
+are preserved under
+`demo/conduent-datasets/source-archive/original-demo/default-dataset`; the
+canonical normalized invoice truth is
+`demo/conduent-datasets/datasets/invoice-demo/truth/records.jsonl`.
 
 
 #### Evaluation schema
 
-The [evaluation schema](../demo/default-dataset/evaluation_schema.json) is optional and used by the `JsonEvaluator` to configure how to evaluate each field in the ground truth with the actual value. If a field is not present in the evaluation schema that is present in the ground truth, then the default evaluators will be used. By default, each field will get a `CustomStringEvaluator` and `FuzzyMatchEvaluator`. If no default configuration and no evaluation schema provided for `CustomStringEvalaution` the evaluator will use exact match for value comparisons ignoring the case.
+The [legacy evaluation schema](../demo/conduent-datasets/source-archive/original-demo/default-dataset/evaluation_schema.json) is optional and used by the `JsonEvaluator` to configure how to evaluate each field in the ground truth with the actual value. If a field is not present in the evaluation schema that is present in the ground truth, then the default evaluators will be used. By default, each field will get a `CustomStringEvaluator` and `FuzzyMatchEvaluator`. If no default configuration and no evaluation schema provided for `CustomStringEvalaution` the evaluator will use exact match for value comparisons ignoring the case.
 
 Each field evaluator must implement the following method with the same arguments:
 

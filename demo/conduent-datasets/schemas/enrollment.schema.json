@@ -1,0 +1,1024 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conduent.example/schemas/enrollment-v1.json",
+  "schema_id": "enrollment-v1",
+  "schema_version": "1.0.0",
+  "title": "Enrollment Document Extraction",
+  "type": "object",
+  "properties": {
+    "medical_group_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Medical Group #"
+    },
+    "benefit_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Benefit #"
+    },
+    "class_division": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Class/Division"
+    },
+    "dental_group_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Dental Group #"
+    },
+    "proposed_effective_date": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Proposed Effective Date"
+    },
+    "company_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Company Name"
+    },
+    "company_city": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Company City"
+    },
+    "state": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "State"
+    },
+    "employee_dob": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee DOB"
+    },
+    "employee_last_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee Last Name"
+    },
+    "employee_first_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee First Name"
+    },
+    "employee_mi": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee MI"
+    },
+    "employee_ssn": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee SSN"
+    },
+    "employee_ind_last_first_mi": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind: Last, First MI"
+    },
+    "employee_ind_gender": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Gender"
+    },
+    "employee_ind_dob": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind DOB"
+    },
+    "employee_ind_disabled": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Disabled"
+    },
+    "employee_ind_disabled_reason": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Disabled Reason"
+    },
+    "spouse_domestic_partner_last_first_mi": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Spouse/Domestic Partner: Last, First MI"
+    },
+    "spouse_domestic_partner_gender": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Spouse/Domestic Partner Gender"
+    },
+    "spouse_domestic_partner_dob": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Spouse/Domestic Partner DOB"
+    },
+    "spouse_domestic_partner_disabled": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Spouse/Domestic Partner Disabled"
+    },
+    "spouse_domestic_partner_disabled_reason": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Spouse/Domestic Partner Disabled Reason"
+    },
+    "other_last_first_mi": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Other: Last, First MI"
+    },
+    "other_gender": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Other: Gender"
+    },
+    "other_dob": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Other: DOB"
+    },
+    "other_disabled": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Other: Disabled"
+    },
+    "other_disabled_reason": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Other:  Disabled Reason"
+    },
+    "change_medical_to_benefit_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Medical to: Benefit #"
+    },
+    "change_medical_to_class_division": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Medical to: Class/Division"
+    },
+    "change_or_select_pcp_pcp": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change or Select PCP: PCP"
+    },
+    "change_or_select_pcp_physician_id": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change or Select PCP: Physician ID"
+    },
+    "change_dental_to_benefit_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Dental to:  Benefit #"
+    },
+    "change_dental_to_class_division": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Dental to:  Class/Division"
+    },
+    "change_dental_benefit_class_pcd_pcd": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Dental Benefit/Class PCD: PCD"
+    },
+    "change_dental_benefit_class_pcd": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Dental Benefit/Class PCD:"
+    },
+    "change_basic_life_to_benefit_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Basic Life to:  Benefit #"
+    },
+    "change_basic_life_to_class_division": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Basic Life to:  Class/Division"
+    },
+    "change_basic_life_bene_group_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Basic Life Bene: Group #"
+    },
+    "change_basic_life_bene_primary_bene_last_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Basic Life Bene: Primary Bene Last Name"
+    },
+    "change_basic_life_bene_primary_bene_first_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Basic Life Bene: Primary Bene First Name"
+    },
+    "change_basic_life_bene_primary_bene_mi": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Basic Life Bene: Primary Bene MI"
+    },
+    "change_voluntary_life_bene_primary_bene_last_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Voluntary Life Bene: Primary Bene Last Name"
+    },
+    "change_voluntary_life_bene_primary_bene_first_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Voluntary Life Bene: Primary Bene First Name"
+    },
+    "change_voluntary_life_bene_primary_bene_mi": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Voluntary Life Bene: Primary Bene MI"
+    },
+    "change_vision_benefit_class_benefit_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Vision Benefit/Class: Benefit #"
+    },
+    "change_vision_benefit_class_class_division": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Change Vision Benefit/Class: Class Division"
+    },
+    "cancel_coverage_for_medical": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Medical"
+    },
+    "cancel_coverage_for_dental": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Dental"
+    },
+    "cancel_coverage_for_basic_life": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Basic Life"
+    },
+    "cancel_coverage_for_voluntary_life": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Voluntary Life"
+    },
+    "cancel_coverage_for_short_term_income_protection": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Short-term Income Protection"
+    },
+    "cancel_coverage_for_vision": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Vision"
+    },
+    "cancel_coverage_for_health_savings_account": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Health Savings Account"
+    },
+    "cancel_coverage_for_health_care_fsa": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Health Care FSA"
+    },
+    "cancel_coverage_for_dependent_care_fsa": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cancel Coverage For: Dependent Care FSA"
+    },
+    "qualifying_event_event_date": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Event Date"
+    },
+    "qualifying_event_reason_rehire": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event Reason: Rehire"
+    },
+    "qualifying_event_marriage": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Marriage"
+    },
+    "qualifying_event_spouse_terminates_employment": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Spouse Terminates Employment"
+    },
+    "qualifying_event_employer_contribution_ceases": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Employer Contribution Ceases"
+    },
+    "qualifying_event_legal_separation": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Legal Separation"
+    },
+    "qualifying_event_spouse_s_employer_terminates_coverage": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Spouse's Employer Terminates Coverage"
+    },
+    "qualifying_event_dependent_birth_adoption": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Dependent Birth / Adoption"
+    },
+    "qualifying_event_divorce": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Divorce"
+    },
+    "qualifying_event_spouse_changes_from_full_time_to_part_time_employment": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Spouse Changes From Full-time to Part-time Employment"
+    },
+    "qualifying_event_dependent_change_to_full_time_student": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Dependent Change to Full-time Student"
+    },
+    "qualifying_event_spouse_deceased": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Spouse Deceased"
+    },
+    "qualifying_event_new_business_enrollment": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: New Business Enrollment"
+    },
+    "qualifying_event_open_enrollment_event": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Open Enrollment Event"
+    },
+    "qualifying_event_new_hire_newly_eligible": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: New Hire/Newly Eligible"
+    },
+    "qualifying_event_rehire_reinstate": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Rehire/Reinstate"
+    },
+    "qualifying_event_other": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Qualifying Event: Other"
+    },
+    "special_enrollment_change_in_family_status": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Special Enrollment: Change in Family Status"
+    },
+    "special_enrollment_loss_of_coverage_including_loss_of_minimum_essential": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Special Enrollment: Loss of coverage, including loss of minimum essential"
+    },
+    "special_enrollment_cobra_exhaustion": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Special Enrollment: COBRA exhaustion"
+    },
+    "special_enrollment_termination_of_medi_cal_healthy_families_aim_program": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Special Enrollment: Termination of Medi-Cal, Healthy Families, AIM Program"
+    },
+    "eligibility_for_premium": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Eligibility for premium"
+    },
+    "eligibility_for_coverage": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Eligibility for coverage"
+    },
+    "employee_ind_info_hours_per_wk": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Hours per wk"
+    },
+    "employee_ind_info_date_of_f_t_hire": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Date of f/t hire"
+    },
+    "employee_ind_info_ssn": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: SSN"
+    },
+    "employee_ind_info_street_address": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Street Address"
+    },
+    "employee_ind_info_apt_suite_box": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: APT/Suite/Box"
+    },
+    "employee_ind_info_city": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: City"
+    },
+    "employee_ind_info_state": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: State"
+    },
+    "employee_ind_info_zip": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Zip"
+    },
+    "employee_ind_info_phone_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Phone #"
+    },
+    "employee_ind_info_email_address": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Email Address"
+    },
+    "employee_ind_info_occupation": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Occupation"
+    },
+    "employee_ind_info_actively_at_work": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Actively at work"
+    },
+    "employee_ind_info_not_working_retiree": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Not working - Retiree"
+    },
+    "employee_ind_info_not_working_cobra": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Not working - COBRA"
+    },
+    "employee_ind_info_not_working_other": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Not working - Other"
+    },
+    "employee_ind_info_annual_salary": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Employee/Ind Info: Annual Salary"
+    },
+    "dependents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "last_first_mi": {
+            "type": [
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ],
+            "x-source-label": "Child/Dependent: Last, First MI"
+          },
+          "gender": {
+            "type": [
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ],
+            "x-source-label": "Child/Dependent Gender"
+          },
+          "dob": {
+            "type": [
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ],
+            "x-source-label": "Child/Dependent: DOB"
+          },
+          "disabled": {
+            "type": [
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ],
+            "x-source-label": "Child/Dependent: Disabled"
+          },
+          "disabled_reason": {
+            "type": [
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ],
+            "x-source-label": "Child/Dependent: Disabled Reason"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "x-normalization": {
+    "repeated_dependent_columns": "Converted to the dependents array in source order.",
+    "unnamed_trailing_column": "Excluded because it is empty in every supplied record."
+  }
+}

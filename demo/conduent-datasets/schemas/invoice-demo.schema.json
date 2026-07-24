@@ -1,0 +1,244 @@
+{
+  "type": "object",
+  "properties": {
+    "Customer Name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Invoice Number": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Billing info": {
+      "type": "object",
+      "properties": {
+        "Customer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Customer ID": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Phone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Payment Due": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Salesperson": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Payment Terms": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Shipping info": {
+      "type": "object",
+      "properties": {
+        "Recipient": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Phone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Delivery Date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Shipping Method": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Shipping Terms": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Table": {
+      "type": "object",
+      "properties": {
+        "Items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "Qty": {
+                "type": [
+                  "integer",
+                  "string",
+                  "null"
+                ]
+              },
+              "Item#": {
+                "type": [
+                  "integer",
+                  "string",
+                  "null"
+                ]
+              },
+              "Description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "Unit price": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "Discount": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "Line total": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "Total Discount": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ]
+        },
+        "Subtotal": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ]
+        },
+        "Sales Tax": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ]
+        },
+        "Total": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Footer": {
+      "type": "object",
+      "properties": {
+        "Customer Name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Website": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Phone number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Fax number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conduent.example/schemas/invoice-demo-v1.json",
+  "schema_id": "invoice-demo-v1",
+  "schema_version": "1.0.0",
+  "title": "Invoice Demo Extraction"
+}

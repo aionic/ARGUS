@@ -1,0 +1,1738 @@
+{
+  "catalog_version": "1.0.0",
+  "generated_at_utc": "2026-07-24T19:13:07.777357+00:00",
+  "source_root": "source-archive",
+  "source_summary": {
+    "file_count": 94,
+    "total_bytes": 10060853,
+    "exact_duplicate_groups": 28,
+    "visual_duplicate_groups": 27
+  },
+  "active_summary": {
+    "document_count": 38,
+    "golden_truth_documents": 34,
+    "schema_only_documents": 1,
+    "unlabeled_documents": 3,
+    "datasets": {
+      "cms1500": 22,
+      "commercial-documents": 7,
+      "enrollments": 4,
+      "invoice-demo": 1,
+      "medical-demo": 1,
+      "unlabeled": 3
+    }
+  },
+  "files": [
+    {
+      "source_path": "BW Truth\\20211210NE1000031_nfnb.00000.tif.oci",
+      "source_group": "bw-truth",
+      "size_bytes": 12946,
+      "extension": ".oci",
+      "content_sha256": "985470cfdc75d41ef56adce49fb1a315573146656bab899ecd07777ddc5f8bfd",
+      "pixel_sha256": "82a471e413968361a6c721b292f5942617b98fb086d7655aa2fec7620805a437",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "BW Truth\\20211210NE1000044_nfnb.00000.tif.oci",
+      "source_group": "bw-truth",
+      "size_bytes": 22570,
+      "extension": ".oci",
+      "content_sha256": "3df28468c47c8a7bf22f3b2657cc2bdf97d2845a863fe875a95bd6e6ab2a6344",
+      "pixel_sha256": "9d0ee71a35fcc2c9e5f91d6140b887c4e93c5b4bfd4c83973237384aa2d05d05",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "BW Truth\\20211210NE1000226_nfnb.00000.tif.oci",
+      "source_group": "bw-truth",
+      "size_bytes": 14834,
+      "extension": ".oci",
+      "content_sha256": "6569cf9d43d8d8a441f73202281bcc890c4a90323e7590e98c9f0643186eb0de",
+      "pixel_sha256": "0b878f1407a86d87e4b75df2dbc581ece52982d6b51bd78ded13a954003e5f14",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "BW Truth\\20211210NE1000294_nfnb.00000.tif.oci",
+      "source_group": "bw-truth",
+      "size_bytes": 18448,
+      "extension": ".oci",
+      "content_sha256": "4f01cd4c1715f15ed9619c3f03c551cc551fba3d127958d6ec07bbb2f43d50ff",
+      "pixel_sha256": "479d29567f575ffb120c09c27c9d237920f39c4f06e3db4c4084f4e2bd4e03fc",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "BW Truth\\20211210NE1000800_nfnb.00000.tif.oci",
+      "source_group": "bw-truth",
+      "size_bytes": 15304,
+      "extension": ".oci",
+      "content_sha256": "18e7448f5c8381e3004292609ca836c999d1e2ca657acd1dd46d8ae2e0fe515c",
+      "pixel_sha256": "01f5f737c5efe96827d66ba8b25adaf0ab983e9ea2b60934c8bfc4b74511dd65",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "BW Truth\\20211210NE1000884_nfnb.00000.tif.oci",
+      "source_group": "bw-truth",
+      "size_bytes": 18992,
+      "extension": ".oci",
+      "content_sha256": "44f304bb26fa46b2acd8313fc0afdcb8ca3e70c46be026b8f317c5d82e04ed7f",
+      "pixel_sha256": "eae7ceea021d2623859b5b19c9510f6733f167bf0b5e17b5bbbee5e2c0164186",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2542,
+        "height": 3273,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "BW Truth\\BW Truth.csv",
+      "source_group": "bw-truth",
+      "size_bytes": 7632,
+      "extension": ".csv",
+      "content_sha256": "fe4246f87f2470f971db78cdb861acafd36f8507a52e76e2a5b8deebb90d04b3",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "MS_Truth_Data.xlsx",
+      "source_group": "ms-truth-data",
+      "size_bytes": 25190,
+      "extension": ".xlsx",
+      "content_sha256": "d74eb98315dd2bb5c0981da88bb99449e246f5be00ede0b1c0468b23662575e5",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "RE_ [External] - Ryan Sullivan sent a message\\4106000020_CF_IL_HW Redacted.tiff",
+      "source_group": "external-handwriting",
+      "size_bytes": 990098,
+      "extension": ".tiff",
+      "content_sha256": "03c8e241626e2cd50cb841c01458c65a12bf64333052a96fdcfc14809dde4b08",
+      "pixel_sha256": "f61bb95740e7d7bc24f1236658610f657595c10d971e35f8d6b481af634173e5",
+      "image": {
+        "format": "TIFF",
+        "mode": "RGB",
+        "width": 2400,
+        "height": 3330,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "RE_ [External] - Ryan Sullivan sent a message\\4106000027_CF_FL_HW.tiff",
+      "source_group": "external-handwriting",
+      "size_bytes": 828902,
+      "extension": ".tiff",
+      "content_sha256": "db8ca701fa1a14a21cbcef1add24a8f05b08faee90fa438779a0efeaafe92694",
+      "pixel_sha256": "975027598980c874ea2dea6f759be61ba095692f199a6605bc07bbce31f56a85",
+      "image": {
+        "format": "TIFF",
+        "mode": "RGB",
+        "width": 2400,
+        "height": 3330,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "RE_ [External] - Ryan Sullivan sent a message\\4106000043_CF_IN_HW.tiff",
+      "source_group": "external-handwriting",
+      "size_bytes": 899930,
+      "extension": ".tiff",
+      "content_sha256": "c0e87cfb9992465ad2c642bc45655ce4daebe0a9cc77766578b78acc8d02ff83",
+      "pixel_sha256": "31b9de3c27e6cd569325659d7ee66b28378f9bd0c2b44e37bc306dbde1374df6",
+      "image": {
+        "format": "TIFF",
+        "mode": "RGB",
+        "width": 2400,
+        "height": 3330,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "RE_ [External] - Ryan Sullivan sent a message\\4106001767_SG_CA_HW Redated.tiff",
+      "source_group": "external-handwriting",
+      "size_bytes": 857590,
+      "extension": ".tiff",
+      "content_sha256": "31be8584af14bddec2d87a0939193a0fdc9949bbf673fd9ffb02aea11b76faab",
+      "pixel_sha256": "164d14770ca7613601e19885c6ed2fe368eb71f3d6439af5dc9f5a411a7ebed9",
+      "image": {
+        "format": "TIFF",
+        "mode": "RGB",
+        "width": 2400,
+        "height": 3330,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000001_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 30034,
+      "extension": ".tif",
+      "content_sha256": "415ace1c0d7944881c362ccf0414f3ecc99976e9d78a4218cb89edeb44b51c8e",
+      "pixel_sha256": "e819967122af7b3f5e459d71c4f504f2afc1502b86c2fe2a2136df920f8cbb61",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2550,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000035_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 18254,
+      "extension": ".tif",
+      "content_sha256": "f0d66340ff8acca0fd2eef32fd901a87968c6e0b4052f7bef244f6d4a7324601",
+      "pixel_sha256": "77375515466c7c2c8a9522aa8390ff54b62977a21bfbc14fc103873eed6b25fc",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2559,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000053_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 29928,
+      "extension": ".tif",
+      "content_sha256": "558ee2bc90796fae650bec8f4b87a11ac19b0f0084af88e49a653bd7195a825b",
+      "pixel_sha256": "396b1062db55dd55a3abff914620dc3a6481e5cb46074400ec64575952570010",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2560,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000104_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 22998,
+      "extension": ".tif",
+      "content_sha256": "f9f9115c5c35eed63dd0ac9b98195946ab476b011e53d7bb85bd4e3b2072b47f",
+      "pixel_sha256": "f296f503111b02d150295fc147b5a83bf1abc0aa2acc068ab15502bf808c95ed",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2551,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000112_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 19864,
+      "extension": ".tif",
+      "content_sha256": "67deedd6b3fb718da892a392950692d68d8ba27b8acc0bf04be1d6cbbfc54fef",
+      "pixel_sha256": "e741b6c27e34fac9aba7b06705bd7271507713a9ef9cdf18af0df934a2f4e817",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2553,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000131_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 20806,
+      "extension": ".tif",
+      "content_sha256": "8ba4e5bc1c7715673598d515cf7e16e82d4c8a48d262cea166a7bc56a031e280",
+      "pixel_sha256": "3f88f482c9ecf44f6c4c867472362328ec4039f96985eb1e70af5263bef91a1d",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2565,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000176_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 16008,
+      "extension": ".tif",
+      "content_sha256": "b70d4353bcfb5cd6e5925e23e3c6362c26f509d976795157a5f37f0a5c3911bb",
+      "pixel_sha256": "9e99759830e6daa9acf1d9a480cf852eb2ba4601c21b9ad1ac617280d03c3fec",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2557,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000190_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 26710,
+      "extension": ".tif",
+      "content_sha256": "9fef925225a2aaa8926b4df47cd887288af6273e1100daedc9037d1ce0b7f0ad",
+      "pixel_sha256": "e6ce1e1275d7a2ebd29d80c2fa68deaefc064f8e005659a624191262ed89a566",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2553,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000200_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 31204,
+      "extension": ".tif",
+      "content_sha256": "89cb12eb43d35ef8bd1d6753e45e82948af628f0431c580c7ee5a9494319d6fc",
+      "pixel_sha256": "ffe68ca6121dc69d0c14d9dea077538d049749f77ae0ec06b554c4e2d98894f4",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2567,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000210_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 22344,
+      "extension": ".tif",
+      "content_sha256": "918083b52d86678313a502017ec7d531068af7c6c568c5031e184308fa627853",
+      "pixel_sha256": "97e25c8f9fcf809c14f0119ea19b59e325f5ac85ead288ff53f7e728d6f0b15a",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2554,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000356_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 27258,
+      "extension": ".tif",
+      "content_sha256": "5b98193290d093541eb5085812042b8c4f314a86ba73e46e4c3bec57b16bb86e",
+      "pixel_sha256": "2635b3e4ce13cda702cf4faea970b93a16c32bc689ae8332d73dcf12380004e9",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2554,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000385_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 17322,
+      "extension": ".tif",
+      "content_sha256": "dec7ec8fe12e27e5f18c75f6da2d5f167f82ce21850832726c723b12100c09ca",
+      "pixel_sha256": "d698dd0eb958c990ee0ea538282852f4ca5ffb794c03101d6729ca7623e1af29",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2563,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000547_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 28634,
+      "extension": ".tif",
+      "content_sha256": "5bfb6260fe64f420061c3e124ebe633135b68bb9109bd4c8b6453f329f448a64",
+      "pixel_sha256": "b2d6e29db118cdd5f951e0a6211cdd5a6c4916c856491fb9c06ad663e8375fbd",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2558,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000807_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 20124,
+      "extension": ".tif",
+      "content_sha256": "ea798a4891beedc6b0e0455d2a6b0cc75ce4e8f3632b49f6373fec3f0571968a",
+      "pixel_sha256": "6bc5a190847c77180d52d40a1d423d246811a62fe95d3702c158a3adc6ce258b",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2554,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000808_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 21172,
+      "extension": ".tif",
+      "content_sha256": "8190a22d9b1747630eae525415a5d1ee7a06cacf1ac179d14f14495532109710",
+      "pixel_sha256": "ff94e5db6d33ed175bae5b8d48680676ba4e595822d4e59a33cd013a8f341bab",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2560,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\20211210NE1000891_dfnc.tif",
+      "source_group": "red-truth",
+      "size_bytes": 25148,
+      "extension": ".tif",
+      "content_sha256": "9d0024e73a1c9b829c35727be7fb52b25c33e0d68556004d4976820f89b3db30",
+      "pixel_sha256": "07dd44284752d94730012cbfd331c85b7de95f63dfcf1bd967265a2eba37d6c5",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2562,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "Red Truth\\Red Truth.csv",
+      "source_group": "red-truth",
+      "size_bytes": 15493,
+      "extension": ".csv",
+      "content_sha256": "5445bc28e38f79f2ff7cb129680efa56f8d803c55cc13171d90c57036a0976c6",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\.DS_Store",
+      "source_group": "original-demo",
+      "size_bytes": 8196,
+      "extension": "",
+      "content_sha256": "e5add6f84c0c8612a2bc22b872ef28d54417dd5a3f437987a179da6e78c360ff",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\README.md",
+      "source_group": "original-demo",
+      "size_bytes": 2115,
+      "extension": ".md",
+      "content_sha256": "886125b47538c20c2e9330fa5ae6df527bfbdb6cc52d502593ae28fee875d52a",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\_bw_run\\20211210NE1000031_nfnb.00000.tif.json",
+      "source_group": "original-demo",
+      "size_bytes": 6108,
+      "extension": ".json",
+      "content_sha256": "55faf7cd7d0daf36d67f2588af25913f7f772d7c2449c927b475cbad28e90ad4",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\_bw_run\\20211210NE1000044_nfnb.00000.tif.json",
+      "source_group": "original-demo",
+      "size_bytes": 5758,
+      "extension": ".json",
+      "content_sha256": "9741652dfdc622682f3b82ce37bc56b03fcf6599ee499f0688b0d26de8508d4d",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\_bw_run\\20211210NE1000226_nfnb.00000.tif.json",
+      "source_group": "original-demo",
+      "size_bytes": 5720,
+      "extension": ".json",
+      "content_sha256": "1752ee95088fa8c90c6a48f58c2bc8966b16a146c2eda50481eb44d7feffc50f",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\_bw_run\\20211210NE1000294_nfnb.00000.tif.json",
+      "source_group": "original-demo",
+      "size_bytes": 5994,
+      "extension": ".json",
+      "content_sha256": "15cb4ef08c1ff44bd004b7283eeb45ce4ab9627bfbf0c92d6781b597250ee43d",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\_bw_run\\20211210NE1000800_nfnb.00000.tif.json",
+      "source_group": "original-demo",
+      "size_bytes": 5990,
+      "extension": ".json",
+      "content_sha256": "daf2325fa84692cfd623024769b50cc727af1663d954b07613e409375ef5a0ce",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\_bw_run\\20211210NE1000884_nfnb.00000.tif.json",
+      "source_group": "original-demo",
+      "size_bytes": 5942,
+      "extension": ".json",
+      "content_sha256": "ada7ac6cfacfe48a3432d881e32c56bd5715103cd11eeae759255ef9a4382ba3",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\_bw_run\\report.json",
+      "source_group": "original-demo",
+      "size_bytes": 1564,
+      "extension": ".json",
+      "content_sha256": "c847982c8188954d6d41da4d3dad5c1b3b8a87dac36a5a8bcee5c74835527d7f",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\_bw_run\\summarize.py",
+      "source_group": "original-demo",
+      "size_bytes": 877,
+      "extension": ".py",
+      "content_sha256": "4a230385680d85ec601b525d6eb6c389eb48ebef05044d79fa36ade97689dd06",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\ground-truth\\BW Truth.csv",
+      "source_group": "original-demo",
+      "size_bytes": 7632,
+      "extension": ".csv",
+      "content_sha256": "fe4246f87f2470f971db78cdb861acafd36f8507a52e76e2a5b8deebb90d04b3",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\ground-truth\\Red Truth.csv",
+      "source_group": "original-demo",
+      "size_bytes": 15493,
+      "extension": ".csv",
+      "content_sha256": "5445bc28e38f79f2ff7cb129680efa56f8d803c55cc13171d90c57036a0976c6",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\ground-truth\\document_review.xlsx",
+      "source_group": "original-demo",
+      "size_bytes": 10202,
+      "extension": ".xlsx",
+      "content_sha256": "7768050689bb63b96ffab22d552b1229af55ba202032bf78419490914b75ad17",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\ground-truth\\schema_from_BW_Truth.json",
+      "source_group": "original-demo",
+      "size_bytes": 4812,
+      "extension": ".json",
+      "content_sha256": "ed6600b0a0e41a87a33e30d4a19d458b31c5f7af745a0e78ed9056fb08412ab8",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\ground-truth\\structured-claims-manifest.json",
+      "source_group": "original-demo",
+      "size_bytes": 496,
+      "extension": ".json",
+      "content_sha256": "b3ec0d0f1b3ccc5f2e58a326ec278bef6477c9c1e552fad2285aa2ca1e0b46cc",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000001_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 30034,
+      "extension": ".tif",
+      "content_sha256": "415ace1c0d7944881c362ccf0414f3ecc99976e9d78a4218cb89edeb44b51c8e",
+      "pixel_sha256": "e819967122af7b3f5e459d71c4f504f2afc1502b86c2fe2a2136df920f8cbb61",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2550,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000031_nfnb.00000.tif",
+      "source_group": "original-demo",
+      "size_bytes": 12946,
+      "extension": ".tif",
+      "content_sha256": "985470cfdc75d41ef56adce49fb1a315573146656bab899ecd07777ddc5f8bfd",
+      "pixel_sha256": "82a471e413968361a6c721b292f5942617b98fb086d7655aa2fec7620805a437",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000035_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 18254,
+      "extension": ".tif",
+      "content_sha256": "f0d66340ff8acca0fd2eef32fd901a87968c6e0b4052f7bef244f6d4a7324601",
+      "pixel_sha256": "77375515466c7c2c8a9522aa8390ff54b62977a21bfbc14fc103873eed6b25fc",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2559,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000044_nfnb.00000.tif",
+      "source_group": "original-demo",
+      "size_bytes": 22570,
+      "extension": ".tif",
+      "content_sha256": "3df28468c47c8a7bf22f3b2657cc2bdf97d2845a863fe875a95bd6e6ab2a6344",
+      "pixel_sha256": "9d0ee71a35fcc2c9e5f91d6140b887c4e93c5b4bfd4c83973237384aa2d05d05",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000053_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 29928,
+      "extension": ".tif",
+      "content_sha256": "558ee2bc90796fae650bec8f4b87a11ac19b0f0084af88e49a653bd7195a825b",
+      "pixel_sha256": "396b1062db55dd55a3abff914620dc3a6481e5cb46074400ec64575952570010",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2560,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000104_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 22998,
+      "extension": ".tif",
+      "content_sha256": "f9f9115c5c35eed63dd0ac9b98195946ab476b011e53d7bb85bd4e3b2072b47f",
+      "pixel_sha256": "f296f503111b02d150295fc147b5a83bf1abc0aa2acc068ab15502bf808c95ed",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2551,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000112_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 19864,
+      "extension": ".tif",
+      "content_sha256": "67deedd6b3fb718da892a392950692d68d8ba27b8acc0bf04be1d6cbbfc54fef",
+      "pixel_sha256": "e741b6c27e34fac9aba7b06705bd7271507713a9ef9cdf18af0df934a2f4e817",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2553,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000131_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 20806,
+      "extension": ".tif",
+      "content_sha256": "8ba4e5bc1c7715673598d515cf7e16e82d4c8a48d262cea166a7bc56a031e280",
+      "pixel_sha256": "3f88f482c9ecf44f6c4c867472362328ec4039f96985eb1e70af5263bef91a1d",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2565,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000176_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 16008,
+      "extension": ".tif",
+      "content_sha256": "b70d4353bcfb5cd6e5925e23e3c6362c26f509d976795157a5f37f0a5c3911bb",
+      "pixel_sha256": "9e99759830e6daa9acf1d9a480cf852eb2ba4601c21b9ad1ac617280d03c3fec",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2557,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000190_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 26710,
+      "extension": ".tif",
+      "content_sha256": "9fef925225a2aaa8926b4df47cd887288af6273e1100daedc9037d1ce0b7f0ad",
+      "pixel_sha256": "e6ce1e1275d7a2ebd29d80c2fa68deaefc064f8e005659a624191262ed89a566",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2553,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000200_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 31204,
+      "extension": ".tif",
+      "content_sha256": "89cb12eb43d35ef8bd1d6753e45e82948af628f0431c580c7ee5a9494319d6fc",
+      "pixel_sha256": "ffe68ca6121dc69d0c14d9dea077538d049749f77ae0ec06b554c4e2d98894f4",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2567,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000210_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 22344,
+      "extension": ".tif",
+      "content_sha256": "918083b52d86678313a502017ec7d531068af7c6c568c5031e184308fa627853",
+      "pixel_sha256": "97e25c8f9fcf809c14f0119ea19b59e325f5ac85ead288ff53f7e728d6f0b15a",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2554,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000226_nfnb.00000.tif",
+      "source_group": "original-demo",
+      "size_bytes": 14834,
+      "extension": ".tif",
+      "content_sha256": "6569cf9d43d8d8a441f73202281bcc890c4a90323e7590e98c9f0643186eb0de",
+      "pixel_sha256": "0b878f1407a86d87e4b75df2dbc581ece52982d6b51bd78ded13a954003e5f14",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000294_nfnb.00000.tif",
+      "source_group": "original-demo",
+      "size_bytes": 18448,
+      "extension": ".tif",
+      "content_sha256": "4f01cd4c1715f15ed9619c3f03c551cc551fba3d127958d6ec07bbb2f43d50ff",
+      "pixel_sha256": "479d29567f575ffb120c09c27c9d237920f39c4f06e3db4c4084f4e2bd4e03fc",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000356_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 27258,
+      "extension": ".tif",
+      "content_sha256": "5b98193290d093541eb5085812042b8c4f314a86ba73e46e4c3bec57b16bb86e",
+      "pixel_sha256": "2635b3e4ce13cda702cf4faea970b93a16c32bc689ae8332d73dcf12380004e9",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2554,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000385_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 17322,
+      "extension": ".tif",
+      "content_sha256": "dec7ec8fe12e27e5f18c75f6da2d5f167f82ce21850832726c723b12100c09ca",
+      "pixel_sha256": "d698dd0eb958c990ee0ea538282852f4ca5ffb794c03101d6729ca7623e1af29",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2563,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000547_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 28634,
+      "extension": ".tif",
+      "content_sha256": "5bfb6260fe64f420061c3e124ebe633135b68bb9109bd4c8b6453f329f448a64",
+      "pixel_sha256": "b2d6e29db118cdd5f951e0a6211cdd5a6c4916c856491fb9c06ad663e8375fbd",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2558,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000800_nfnb.00000.tif",
+      "source_group": "original-demo",
+      "size_bytes": 15304,
+      "extension": ".tif",
+      "content_sha256": "18e7448f5c8381e3004292609ca836c999d1e2ca657acd1dd46d8ae2e0fe515c",
+      "pixel_sha256": "01f5f737c5efe96827d66ba8b25adaf0ab983e9ea2b60934c8bfc4b74511dd65",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2578,
+        "height": 3327,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000807_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 20124,
+      "extension": ".tif",
+      "content_sha256": "ea798a4891beedc6b0e0455d2a6b0cc75ce4e8f3632b49f6373fec3f0571968a",
+      "pixel_sha256": "6bc5a190847c77180d52d40a1d423d246811a62fe95d3702c158a3adc6ce258b",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2554,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000808_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 21172,
+      "extension": ".tif",
+      "content_sha256": "8190a22d9b1747630eae525415a5d1ee7a06cacf1ac179d14f14495532109710",
+      "pixel_sha256": "ff94e5db6d33ed175bae5b8d48680676ba4e595822d4e59a33cd013a8f341bab",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2560,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000884_nfnb.00000.tif",
+      "source_group": "original-demo",
+      "size_bytes": 18992,
+      "extension": ".tif",
+      "content_sha256": "44f304bb26fa46b2acd8313fc0afdcb8ca3e70c46be026b8f317c5d82e04ed7f",
+      "pixel_sha256": "eae7ceea021d2623859b5b19c9510f6733f167bf0b5e17b5bbbee5e2c0164186",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2542,
+        "height": 3273,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\20211210NE1000891_dfnc.tif",
+      "source_group": "original-demo",
+      "size_bytes": 25148,
+      "extension": ".tif",
+      "content_sha256": "9d0024e73a1c9b829c35727be7fb52b25c33e0d68556004d4976820f89b3db30",
+      "pixel_sha256": "07dd44284752d94730012cbfd331c85b7de95f63dfcf1bd967265a2eba37d6c5",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2562,
+        "height": 3300,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\250128SB1001368.00004.tif",
+      "source_group": "original-demo",
+      "size_bytes": 28830,
+      "extension": ".tif",
+      "content_sha256": "93b7cdba822cff5f46f4c6abf614fd4f33fccb2a134f33360dfb565bb7172d15",
+      "pixel_sha256": "7db2243211eb8caba04379680732ecd5311e09130395b20329a6573774b96d81",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 1727,
+        "height": 2199,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\250205C22000227.00012.tif",
+      "source_group": "original-demo",
+      "size_bytes": 23330,
+      "extension": ".tif",
+      "content_sha256": "eb59c306c58a808ba5e1d45686a7dd0c538abf4ec20b73429e4f7743b1cc8ced",
+      "pixel_sha256": "fa378faf0b89095a7d92c8d098f6f7b7827b8c84ded7dd8fefa6c58714eed3da",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 1725,
+        "height": 2200,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\250205C22001544.00004.tif",
+      "source_group": "original-demo",
+      "size_bytes": 65624,
+      "extension": ".tif",
+      "content_sha256": "3f828bc9ba7b1fb08e434582e65179f5d071a19d486f98108914c9694feffe7b",
+      "pixel_sha256": "6b3b2f977afde15624b940e70f04f5fe8d9175d3c590a788af7cbd0b91c62565",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 1722,
+        "height": 2207,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\4106000020_CF_IL_HW Redacted.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 990098,
+      "extension": ".tiff",
+      "content_sha256": "03c8e241626e2cd50cb841c01458c65a12bf64333052a96fdcfc14809dde4b08",
+      "pixel_sha256": "f61bb95740e7d7bc24f1236658610f657595c10d971e35f8d6b481af634173e5",
+      "image": {
+        "format": "TIFF",
+        "mode": "RGB",
+        "width": 2400,
+        "height": 3330,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\4106000027_CF_FL_HW.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 828902,
+      "extension": ".tiff",
+      "content_sha256": "db8ca701fa1a14a21cbcef1add24a8f05b08faee90fa438779a0efeaafe92694",
+      "pixel_sha256": "975027598980c874ea2dea6f759be61ba095692f199a6605bc07bbce31f56a85",
+      "image": {
+        "format": "TIFF",
+        "mode": "RGB",
+        "width": 2400,
+        "height": 3330,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\4106000043_CF_IN_HW.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 899930,
+      "extension": ".tiff",
+      "content_sha256": "c0e87cfb9992465ad2c642bc45655ce4daebe0a9cc77766578b78acc8d02ff83",
+      "pixel_sha256": "31b9de3c27e6cd569325659d7ee66b28378f9bd0c2b44e37bc306dbde1374df6",
+      "image": {
+        "format": "TIFF",
+        "mode": "RGB",
+        "width": 2400,
+        "height": 3330,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\4106001767_SG_CA_HW Redated.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 857590,
+      "extension": ".tiff",
+      "content_sha256": "31be8584af14bddec2d87a0939193a0fdc9949bbf673fd9ffb02aea11b76faab",
+      "pixel_sha256": "164d14770ca7613601e19885c6ed2fe368eb71f3d6439af5dc9f5a411a7ebed9",
+      "image": {
+        "format": "TIFF",
+        "mode": "RGB",
+        "width": 2400,
+        "height": 3330,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\EO7UGK9Bprod.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 39340,
+      "extension": ".tiff",
+      "content_sha256": "b665ca75ae305653a77b60d0e4b1bca075c9219d45776266ba19ee10d6451a67",
+      "pixel_sha256": "c117d768d999a4c0a6a0361a6b7079767c53e16c2ab52880bb93355c14d72d68",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 1714,
+        "height": 2211,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\WO7U9NJQprod.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 31040,
+      "extension": ".tiff",
+      "content_sha256": "9eae75ceb736d7e084333e3afd908d1e49cd950512de7e7b5e73a912aebf2d92",
+      "pixel_sha256": "00dca461a147de305aba87150e2dbe88dadeef3c8e10f91863b84c8cb3d6aaf2",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2117,
+        "height": 2618,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\WO7U9OB4prod.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 68590,
+      "extension": ".tiff",
+      "content_sha256": "bb75e25da563314947bdc541fda3e06e895eca736e27dc47a75c932dc198ee93",
+      "pixel_sha256": "28907f0e2a98d7cec8143b0e13b63426ef4dd50b75a23b7f3d95e21eb36834d2",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2161,
+        "height": 2899,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\WO7U9OZ0.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 42124,
+      "extension": ".tiff",
+      "content_sha256": "fa0733edb5eba4091aec49796b6c6f7ce4f76ec2aece45a967e195e1b410ab57",
+      "pixel_sha256": "f0e07c425fd12df6bbca00d222ba320556806e809c21d5d7c75b35998cf8a68d",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2182,
+        "height": 2748,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\WO7U9QP0.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 28302,
+      "extension": ".tiff",
+      "content_sha256": "4be6cf737c5a5d8e974b5c16641565ee2486fca64bbfa9a1bf803a6e6dfea635",
+      "pixel_sha256": "55f8f4cf5294e2be057da7d40acc761db93fa0567f037f694b6a2f81b5327478",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2176,
+        "height": 2862,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\WO7U9R3I.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 26196,
+      "extension": ".tiff",
+      "content_sha256": "babde92126ca151e29ea4389aedb2c377e8bdcd55f12a4a6a80549e187ca3851",
+      "pixel_sha256": "9531cf8ee957ae0a06de372d083d0863798a47b0d85b23375517bf855744f5b1",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2182,
+        "height": 2896,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\WO7U9SLIprod.tiff",
+      "source_group": "original-demo",
+      "size_bytes": 41702,
+      "extension": ".tiff",
+      "content_sha256": "d79b293470345825f638f02b9a4919604e8292321138cc986b8d569156669708",
+      "pixel_sha256": "a32657c2ac108f52b62bd1f721339a38dbe8aa9a54d96cf8763df5258e7ee79e",
+      "image": {
+        "format": "TIFF",
+        "mode": "1",
+        "width": 2121,
+        "height": 2773,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\bad.png",
+      "source_group": "original-demo",
+      "size_bytes": 111949,
+      "extension": ".png",
+      "content_sha256": "12d9621d866ae4239ec275d1c7d604531b35a79f07ac349af8325ff7111fbc80",
+      "pixel_sha256": "00dca461a147de305aba87150e2dbe88dadeef3c8e10f91863b84c8cb3d6aaf2",
+      "image": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 2117,
+        "height": 2618,
+        "frames": 1
+      }
+    },
+    {
+      "source_path": "demo\\default-dataset\\Invoice Sample.pdf",
+      "source_group": "original-demo",
+      "size_bytes": 910380,
+      "extension": ".pdf",
+      "content_sha256": "70e3cb303c67ec929e04820b99c10d2c073f9cb4d6b282a6e4399ba39f26bbcf",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\default-dataset\\eval_data.jsonl",
+      "source_group": "original-demo",
+      "size_bytes": 3875,
+      "extension": ".jsonl",
+      "content_sha256": "72c2e084ef798fd285656da18a47153cc70e263418277ced4f17d5f98b3b3626",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\default-dataset\\evaluation_schema.json",
+      "source_group": "original-demo",
+      "size_bytes": 2959,
+      "extension": ".json",
+      "content_sha256": "4837e6627244520fc0754f2de7300af6ff184d0796fbb1863af51322b53f0fc3",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\default-dataset\\ground_truth.json",
+      "source_group": "original-demo",
+      "size_bytes": 1885,
+      "extension": ".json",
+      "content_sha256": "61c85b73032ac59d5a814f60d2c784807f100366abfc5d6d1815b2d1fff308c6",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\default-dataset\\ground_truth_with_evaluators.json",
+      "source_group": "original-demo",
+      "size_bytes": 5146,
+      "extension": ".json",
+      "content_sha256": "2f929376ff985879da28856b376e96ad2d4823f3cec1a55a7514070b817d8944",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\default-dataset\\output_schema.json",
+      "source_group": "original-demo",
+      "size_bytes": 1025,
+      "extension": ".json",
+      "content_sha256": "c08602b16cce0d2f8833f2ceefd6d7745080e1d96a04dd289468de8553c48b82",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\default-dataset\\output_schema_empty.json",
+      "source_group": "original-demo",
+      "size_bytes": 2,
+      "extension": ".json",
+      "content_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\default-dataset\\system_prompt.txt",
+      "source_group": "original-demo",
+      "size_bytes": 752,
+      "extension": ".txt",
+      "content_sha256": "1bc564b31e2a79359e3241b1c3bc46d367b599ce232079cacc63429ff35251a8",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\medical-dataset\\eyes_surgery_pre_1_4.pdf",
+      "source_group": "original-demo",
+      "size_bytes": 373121,
+      "extension": ".pdf",
+      "content_sha256": "9fe747a3f24a4f3831f3436b52adacec6f60431686610719bb5f379556535344",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\medical-dataset\\output_schema.json",
+      "source_group": "original-demo",
+      "size_bytes": 2394,
+      "extension": ".json",
+      "content_sha256": "a9229a8d95d99e9d14183f99ad88f1676d996ff516002f59f78c541c13894701",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\medical-dataset\\system_prompt.txt",
+      "source_group": "original-demo",
+      "size_bytes": 426,
+      "extension": ".txt",
+      "content_sha256": "0ce9d65235c6ee513fe3b6797e71af6751adee4b12a1f0c9e10ddf19fbc8f6f0",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\mistral-dataset\\output_schema.json",
+      "source_group": "original-demo",
+      "size_bytes": 1027,
+      "extension": ".json",
+      "content_sha256": "68e5727c1f2e4067726a4a58ba4ab4eb57d0cd9e75c9fb7849f5ffb79b303c04",
+      "pixel_sha256": null,
+      "image": null
+    },
+    {
+      "source_path": "demo\\mistral-dataset\\system_prompt.txt",
+      "source_group": "original-demo",
+      "size_bytes": 776,
+      "extension": ".txt",
+      "content_sha256": "02b5d83ed0b0fa0029da59fa91926209a3eebf4413db3817c850eb194d98ccf3",
+      "pixel_sha256": null,
+      "image": null
+    }
+  ],
+  "exact_duplicates": [
+    {
+      "duplicate_group_id": "exact-001",
+      "content_sha256": "985470cfdc75d41ef56adce49fb1a315573146656bab899ecd07777ddc5f8bfd",
+      "paths": [
+        "BW Truth\\20211210NE1000031_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000031_nfnb.00000.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-002",
+      "content_sha256": "3df28468c47c8a7bf22f3b2657cc2bdf97d2845a863fe875a95bd6e6ab2a6344",
+      "paths": [
+        "BW Truth\\20211210NE1000044_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000044_nfnb.00000.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-003",
+      "content_sha256": "6569cf9d43d8d8a441f73202281bcc890c4a90323e7590e98c9f0643186eb0de",
+      "paths": [
+        "BW Truth\\20211210NE1000226_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000226_nfnb.00000.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-004",
+      "content_sha256": "4f01cd4c1715f15ed9619c3f03c551cc551fba3d127958d6ec07bbb2f43d50ff",
+      "paths": [
+        "BW Truth\\20211210NE1000294_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000294_nfnb.00000.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-005",
+      "content_sha256": "18e7448f5c8381e3004292609ca836c999d1e2ca657acd1dd46d8ae2e0fe515c",
+      "paths": [
+        "BW Truth\\20211210NE1000800_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000800_nfnb.00000.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-006",
+      "content_sha256": "44f304bb26fa46b2acd8313fc0afdcb8ca3e70c46be026b8f317c5d82e04ed7f",
+      "paths": [
+        "BW Truth\\20211210NE1000884_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000884_nfnb.00000.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-007",
+      "content_sha256": "fe4246f87f2470f971db78cdb861acafd36f8507a52e76e2a5b8deebb90d04b3",
+      "paths": [
+        "BW Truth\\BW Truth.csv",
+        "demo\\cms1500-claims\\ground-truth\\BW Truth.csv"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-008",
+      "content_sha256": "03c8e241626e2cd50cb841c01458c65a12bf64333052a96fdcfc14809dde4b08",
+      "paths": [
+        "RE_ [External] - Ryan Sullivan sent a message\\4106000020_CF_IL_HW Redacted.tiff",
+        "demo\\cms1500-claims\\samples\\4106000020_CF_IL_HW Redacted.tiff"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-009",
+      "content_sha256": "db8ca701fa1a14a21cbcef1add24a8f05b08faee90fa438779a0efeaafe92694",
+      "paths": [
+        "RE_ [External] - Ryan Sullivan sent a message\\4106000027_CF_FL_HW.tiff",
+        "demo\\cms1500-claims\\samples\\4106000027_CF_FL_HW.tiff"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-010",
+      "content_sha256": "c0e87cfb9992465ad2c642bc45655ce4daebe0a9cc77766578b78acc8d02ff83",
+      "paths": [
+        "RE_ [External] - Ryan Sullivan sent a message\\4106000043_CF_IN_HW.tiff",
+        "demo\\cms1500-claims\\samples\\4106000043_CF_IN_HW.tiff"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-011",
+      "content_sha256": "31be8584af14bddec2d87a0939193a0fdc9949bbf673fd9ffb02aea11b76faab",
+      "paths": [
+        "RE_ [External] - Ryan Sullivan sent a message\\4106001767_SG_CA_HW Redated.tiff",
+        "demo\\cms1500-claims\\samples\\4106001767_SG_CA_HW Redated.tiff"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-012",
+      "content_sha256": "415ace1c0d7944881c362ccf0414f3ecc99976e9d78a4218cb89edeb44b51c8e",
+      "paths": [
+        "Red Truth\\20211210NE1000001_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000001_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-013",
+      "content_sha256": "f0d66340ff8acca0fd2eef32fd901a87968c6e0b4052f7bef244f6d4a7324601",
+      "paths": [
+        "Red Truth\\20211210NE1000035_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000035_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-014",
+      "content_sha256": "558ee2bc90796fae650bec8f4b87a11ac19b0f0084af88e49a653bd7195a825b",
+      "paths": [
+        "Red Truth\\20211210NE1000053_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000053_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-015",
+      "content_sha256": "f9f9115c5c35eed63dd0ac9b98195946ab476b011e53d7bb85bd4e3b2072b47f",
+      "paths": [
+        "Red Truth\\20211210NE1000104_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000104_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-016",
+      "content_sha256": "67deedd6b3fb718da892a392950692d68d8ba27b8acc0bf04be1d6cbbfc54fef",
+      "paths": [
+        "Red Truth\\20211210NE1000112_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000112_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-017",
+      "content_sha256": "8ba4e5bc1c7715673598d515cf7e16e82d4c8a48d262cea166a7bc56a031e280",
+      "paths": [
+        "Red Truth\\20211210NE1000131_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000131_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-018",
+      "content_sha256": "b70d4353bcfb5cd6e5925e23e3c6362c26f509d976795157a5f37f0a5c3911bb",
+      "paths": [
+        "Red Truth\\20211210NE1000176_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000176_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-019",
+      "content_sha256": "9fef925225a2aaa8926b4df47cd887288af6273e1100daedc9037d1ce0b7f0ad",
+      "paths": [
+        "Red Truth\\20211210NE1000190_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000190_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-020",
+      "content_sha256": "89cb12eb43d35ef8bd1d6753e45e82948af628f0431c580c7ee5a9494319d6fc",
+      "paths": [
+        "Red Truth\\20211210NE1000200_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000200_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-021",
+      "content_sha256": "918083b52d86678313a502017ec7d531068af7c6c568c5031e184308fa627853",
+      "paths": [
+        "Red Truth\\20211210NE1000210_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000210_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-022",
+      "content_sha256": "5b98193290d093541eb5085812042b8c4f314a86ba73e46e4c3bec57b16bb86e",
+      "paths": [
+        "Red Truth\\20211210NE1000356_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000356_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-023",
+      "content_sha256": "dec7ec8fe12e27e5f18c75f6da2d5f167f82ce21850832726c723b12100c09ca",
+      "paths": [
+        "Red Truth\\20211210NE1000385_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000385_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-024",
+      "content_sha256": "5bfb6260fe64f420061c3e124ebe633135b68bb9109bd4c8b6453f329f448a64",
+      "paths": [
+        "Red Truth\\20211210NE1000547_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000547_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-025",
+      "content_sha256": "ea798a4891beedc6b0e0455d2a6b0cc75ce4e8f3632b49f6373fec3f0571968a",
+      "paths": [
+        "Red Truth\\20211210NE1000807_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000807_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-026",
+      "content_sha256": "8190a22d9b1747630eae525415a5d1ee7a06cacf1ac179d14f14495532109710",
+      "paths": [
+        "Red Truth\\20211210NE1000808_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000808_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-027",
+      "content_sha256": "9d0024e73a1c9b829c35727be7fb52b25c33e0d68556004d4976820f89b3db30",
+      "paths": [
+        "Red Truth\\20211210NE1000891_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000891_dfnc.tif"
+      ]
+    },
+    {
+      "duplicate_group_id": "exact-028",
+      "content_sha256": "5445bc28e38f79f2ff7cb129680efa56f8d803c55cc13171d90c57036a0976c6",
+      "paths": [
+        "Red Truth\\Red Truth.csv",
+        "demo\\cms1500-claims\\ground-truth\\Red Truth.csv"
+      ]
+    }
+  ],
+  "visual_duplicates": [
+    {
+      "visual_duplicate_group_id": "visual-001",
+      "pixel_sha256": "82a471e413968361a6c721b292f5942617b98fb086d7655aa2fec7620805a437",
+      "paths": [
+        "BW Truth\\20211210NE1000031_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000031_nfnb.00000.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-002",
+      "pixel_sha256": "9d0ee71a35fcc2c9e5f91d6140b887c4e93c5b4bfd4c83973237384aa2d05d05",
+      "paths": [
+        "BW Truth\\20211210NE1000044_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000044_nfnb.00000.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-003",
+      "pixel_sha256": "0b878f1407a86d87e4b75df2dbc581ece52982d6b51bd78ded13a954003e5f14",
+      "paths": [
+        "BW Truth\\20211210NE1000226_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000226_nfnb.00000.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-004",
+      "pixel_sha256": "479d29567f575ffb120c09c27c9d237920f39c4f06e3db4c4084f4e2bd4e03fc",
+      "paths": [
+        "BW Truth\\20211210NE1000294_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000294_nfnb.00000.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-005",
+      "pixel_sha256": "01f5f737c5efe96827d66ba8b25adaf0ab983e9ea2b60934c8bfc4b74511dd65",
+      "paths": [
+        "BW Truth\\20211210NE1000800_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000800_nfnb.00000.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-006",
+      "pixel_sha256": "eae7ceea021d2623859b5b19c9510f6733f167bf0b5e17b5bbbee5e2c0164186",
+      "paths": [
+        "BW Truth\\20211210NE1000884_nfnb.00000.tif.oci",
+        "demo\\cms1500-claims\\samples\\20211210NE1000884_nfnb.00000.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-007",
+      "pixel_sha256": "f61bb95740e7d7bc24f1236658610f657595c10d971e35f8d6b481af634173e5",
+      "paths": [
+        "RE_ [External] - Ryan Sullivan sent a message\\4106000020_CF_IL_HW Redacted.tiff",
+        "demo\\cms1500-claims\\samples\\4106000020_CF_IL_HW Redacted.tiff"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-008",
+      "pixel_sha256": "975027598980c874ea2dea6f759be61ba095692f199a6605bc07bbce31f56a85",
+      "paths": [
+        "RE_ [External] - Ryan Sullivan sent a message\\4106000027_CF_FL_HW.tiff",
+        "demo\\cms1500-claims\\samples\\4106000027_CF_FL_HW.tiff"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-009",
+      "pixel_sha256": "31b9de3c27e6cd569325659d7ee66b28378f9bd0c2b44e37bc306dbde1374df6",
+      "paths": [
+        "RE_ [External] - Ryan Sullivan sent a message\\4106000043_CF_IN_HW.tiff",
+        "demo\\cms1500-claims\\samples\\4106000043_CF_IN_HW.tiff"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-010",
+      "pixel_sha256": "164d14770ca7613601e19885c6ed2fe368eb71f3d6439af5dc9f5a411a7ebed9",
+      "paths": [
+        "RE_ [External] - Ryan Sullivan sent a message\\4106001767_SG_CA_HW Redated.tiff",
+        "demo\\cms1500-claims\\samples\\4106001767_SG_CA_HW Redated.tiff"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-011",
+      "pixel_sha256": "e819967122af7b3f5e459d71c4f504f2afc1502b86c2fe2a2136df920f8cbb61",
+      "paths": [
+        "Red Truth\\20211210NE1000001_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000001_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-012",
+      "pixel_sha256": "77375515466c7c2c8a9522aa8390ff54b62977a21bfbc14fc103873eed6b25fc",
+      "paths": [
+        "Red Truth\\20211210NE1000035_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000035_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-013",
+      "pixel_sha256": "396b1062db55dd55a3abff914620dc3a6481e5cb46074400ec64575952570010",
+      "paths": [
+        "Red Truth\\20211210NE1000053_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000053_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-014",
+      "pixel_sha256": "f296f503111b02d150295fc147b5a83bf1abc0aa2acc068ab15502bf808c95ed",
+      "paths": [
+        "Red Truth\\20211210NE1000104_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000104_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-015",
+      "pixel_sha256": "e741b6c27e34fac9aba7b06705bd7271507713a9ef9cdf18af0df934a2f4e817",
+      "paths": [
+        "Red Truth\\20211210NE1000112_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000112_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-016",
+      "pixel_sha256": "3f88f482c9ecf44f6c4c867472362328ec4039f96985eb1e70af5263bef91a1d",
+      "paths": [
+        "Red Truth\\20211210NE1000131_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000131_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-017",
+      "pixel_sha256": "9e99759830e6daa9acf1d9a480cf852eb2ba4601c21b9ad1ac617280d03c3fec",
+      "paths": [
+        "Red Truth\\20211210NE1000176_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000176_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-018",
+      "pixel_sha256": "e6ce1e1275d7a2ebd29d80c2fa68deaefc064f8e005659a624191262ed89a566",
+      "paths": [
+        "Red Truth\\20211210NE1000190_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000190_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-019",
+      "pixel_sha256": "ffe68ca6121dc69d0c14d9dea077538d049749f77ae0ec06b554c4e2d98894f4",
+      "paths": [
+        "Red Truth\\20211210NE1000200_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000200_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-020",
+      "pixel_sha256": "97e25c8f9fcf809c14f0119ea19b59e325f5ac85ead288ff53f7e728d6f0b15a",
+      "paths": [
+        "Red Truth\\20211210NE1000210_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000210_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-021",
+      "pixel_sha256": "2635b3e4ce13cda702cf4faea970b93a16c32bc689ae8332d73dcf12380004e9",
+      "paths": [
+        "Red Truth\\20211210NE1000356_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000356_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-022",
+      "pixel_sha256": "d698dd0eb958c990ee0ea538282852f4ca5ffb794c03101d6729ca7623e1af29",
+      "paths": [
+        "Red Truth\\20211210NE1000385_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000385_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-023",
+      "pixel_sha256": "b2d6e29db118cdd5f951e0a6211cdd5a6c4916c856491fb9c06ad663e8375fbd",
+      "paths": [
+        "Red Truth\\20211210NE1000547_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000547_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-024",
+      "pixel_sha256": "6bc5a190847c77180d52d40a1d423d246811a62fe95d3702c158a3adc6ce258b",
+      "paths": [
+        "Red Truth\\20211210NE1000807_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000807_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-025",
+      "pixel_sha256": "ff94e5db6d33ed175bae5b8d48680676ba4e595822d4e59a33cd013a8f341bab",
+      "paths": [
+        "Red Truth\\20211210NE1000808_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000808_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-026",
+      "pixel_sha256": "07dd44284752d94730012cbfd331c85b7de95f63dfcf1bd967265a2eba37d6c5",
+      "paths": [
+        "Red Truth\\20211210NE1000891_dfnc.tif",
+        "demo\\cms1500-claims\\samples\\20211210NE1000891_dfnc.tif"
+      ],
+      "same_file_bytes": true
+    },
+    {
+      "visual_duplicate_group_id": "visual-027",
+      "pixel_sha256": "00dca461a147de305aba87150e2dbe88dadeef3c8e10f91863b84c8cb3d6aaf2",
+      "paths": [
+        "demo\\cms1500-claims\\samples\\WO7U9NJQprod.tiff",
+        "demo\\cms1500-claims\\samples\\bad.png"
+      ],
+      "same_file_bytes": false
+    }
+  ],
+  "exclusions": [
+    {
+      "source_path": "demo\\cms1500-claims\\samples\\bad.png",
+      "reason": "visual_duplicate_mislabeled_as_negative_test",
+      "pixel_sha256": "00dca461a147de305aba87150e2dbe88dadeef3c8e10f91863b84c8cb3d6aaf2",
+      "visually_identical_to": [
+        "demo\\cms1500-claims\\samples\\WO7U9NJQprod.tiff"
+      ],
+      "derived_from_document_id": "commercial-f33617ffaba8"
+    },
+    {
+      "source_path": "demo\\mistral-dataset",
+      "reason": "incomplete_package_and_semantic_schema_duplicate",
+      "semantically_duplicates": "demo\\default-dataset\\output_schema.json"
+    }
+  ]
+}

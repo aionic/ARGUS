@@ -22,7 +22,9 @@ REST API: Content Understanding ``2025-11-01`` (GA).
 """
 
 import base64
+import fnmatch
 import hashlib
+import json
 import logging
 import os
 import re
@@ -41,7 +43,7 @@ _NAME_RE = re.compile(r"[^a-zA-Z0-9_]")
 _ANALYZER_ID_RE = re.compile(r"[^a-zA-Z0-9._]")
 # Bump when the analyzer build contract changes (base analyzer, config, schema
 # mapping) so a fresh analyzer id is used instead of a previously failed one.
-_ANALYZER_VERSION = "v2"
+_ANALYZER_VERSION = "v3"
 
 # Cache of analyzer ids we have already confirmed exist (per process).
 _ready_analyzers: set[str] = set()
@@ -95,25 +97,82 @@ def _sanitize_name(name: str) -> str:
     return safe
 
 
-def _example_value_to_field(value: Any) -> dict[str, Any]:
+def _humanize_field_name(name: str) -> str:
+    text = re.sub(r"^od_", "", name, flags=re.IGNORECASE)
+    text = re.sub(r"_+", " ", text).strip()
+    return text[:1].upper() + text[1:] if text else name
+
+
+def _path_matches(path: str, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+
+
+def _field_options(path: str, options: dict[str, Any]) -> dict[str, Any]:
+    hints = options.get("field_hints") or {}
+    hint = hints.get(path, {}) if isinstance(hints, dict) else {}
+    return hint if isinstance(hint, dict) else {}
+
+
+def _example_value_to_field(
+    value: Any,
+    original_name: str,
+    path: str,
+    options: dict[str, Any],
+) -> dict[str, Any]:
     """Map a single ARGUS example value to a CU field definition."""
     if isinstance(value, dict):
-        return {"type": "object", "properties": _example_object_to_properties(value)}
-    if isinstance(value, list):
+        field = {"type": "object", "properties": _example_object_to_properties(value, options, path)}
+    elif isinstance(value, list):
         item = value[0] if value else ""
-        return {"type": "array", "items": _example_value_to_field(item)}
-    if isinstance(value, bool):
-        return {"type": "boolean"}
-    if isinstance(value, int):
-        return {"type": "integer"}
-    if isinstance(value, float):
-        return {"type": "number"}
-    # Strings (including the empty-string placeholders ARGUS uses) -> string.
-    return {"type": "string"}
+        item_path = f"{path}[]"
+        field = {
+            "type": "array",
+            "items": _example_value_to_field(item, original_name, item_path, options),
+        }
+    elif isinstance(value, bool):
+        field = {"type": "boolean"}
+    elif isinstance(value, int):
+        field = {"type": "integer"}
+    elif isinstance(value, float):
+        field = {"type": "number"}
+    else:
+        # Strings (including the empty-string placeholders ARGUS uses) -> string.
+        field = {"type": "string"}
+
+    hint = _field_options(path, options)
+    description = hint.get("description")
+    if not description:
+        description = _humanize_field_name(original_name) if options.get("humanize_field_names") else original_name
+    field["description"] = str(description)
+
+    type_override = hint.get("type")
+    if type_override:
+        field["type"] = type_override
+    if isinstance(hint.get("enum"), list):
+        field["enum"] = hint["enum"]
+
+    is_leaf = not isinstance(value, (dict, list))
+    method = hint.get("method") or (options.get("default_method") if is_leaf else None)
+    confidence_patterns = options.get("confidence_fields") or []
+    if is_leaf and isinstance(confidence_patterns, list) and _path_matches(path, confidence_patterns):
+        method = method or "extract"
+        field["estimateSourceAndConfidence"] = True
+    if method:
+        field["method"] = method
+        if method == "extract":
+            field.setdefault("estimateSourceAndConfidence", True)
+    if "estimateSourceAndConfidence" in hint:
+        field["estimateSourceAndConfidence"] = bool(hint["estimateSourceAndConfidence"])
+    return field
 
 
-def _example_object_to_properties(obj: dict[str, Any]) -> dict[str, Any]:
+def _example_object_to_properties(
+    obj: dict[str, Any],
+    options: dict[str, Any] | None = None,
+    prefix: str = "",
+) -> dict[str, Any]:
     """Map an ARGUS example object to CU ``properties`` (sanitized keys)."""
+    options = options or {}
     properties: dict[str, Any] = {}
     used: set[str] = set()
     for original_key, value in obj.items():
@@ -125,23 +184,28 @@ def _example_object_to_properties(obj: dict[str, Any]) -> dict[str, Any]:
             candidate = f"{key}_{i}"
             i += 1
         used.add(candidate)
-        field = _example_value_to_field(value)
-        field["description"] = str(original_key)
-        properties[candidate] = field
+        path = f"{prefix}.{original_key}" if prefix else str(original_key)
+        properties[candidate] = _example_value_to_field(value, str(original_key), path, options)
     return properties
 
 
-def _build_field_schema(dataset_name: str, example_schema: dict[str, Any]) -> dict[str, Any]:
+def _build_field_schema(
+    dataset_name: str,
+    example_schema: dict[str, Any],
+    analyzer_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    options = analyzer_options or {}
     return {
-        "name": _sanitize_name(dataset_name)[:64] or "ArgusSchema",
-        "description": f"ARGUS dataset '{dataset_name}' extraction schema",
-        "fields": _example_object_to_properties(example_schema),
+        "name": _sanitize_name(str(options.get("schema_name") or dataset_name))[:64] or "ArgusSchema",
+        "description": str(options.get("schema_description") or f"ARGUS dataset '{dataset_name}' extraction schema"),
+        "fields": _example_object_to_properties(example_schema, options),
     }
 
 
-def _analyzer_id(dataset_name: str, field_schema: dict[str, Any]) -> str:
+def _analyzer_id(dataset_name: str, analyzer_definition: dict[str, Any]) -> str:
     """Deterministic analyzer id embedding a hash of the schema."""
-    schema_hash = hashlib.sha256(repr(field_schema).encode("utf-8")).hexdigest()[:10]
+    canonical = json.dumps(analyzer_definition, sort_keys=True, separators=(",", ":"))
+    schema_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
     base = _ANALYZER_ID_RE.sub("_", f"argus_{_ANALYZER_VERSION}_{dataset_name}").strip("_").lower()
     return f"{base[:48]}_{schema_hash}"[:64]
 
@@ -265,7 +329,7 @@ def _ensure_analyzer(
     client: httpx.Client,
     settings: dict[str, Any],
     analyzer_id: str,
-    field_schema: dict[str, Any],
+    analyzer_definition: dict[str, Any],
 ) -> None:
     """Create the analyzer if it does not already exist (cached per process)."""
     if analyzer_id in _ready_analyzers:
@@ -293,23 +357,9 @@ def _ensure_analyzer(
         logger.warning("Deleting Content Understanding analyzer '%s' in state '%s'", analyzer_id, status)
         client.delete(get_url, headers=_headers(settings, json_body=False))
 
-    body: dict[str, Any] = {
-        "description": field_schema.get("description", "ARGUS analyzer"),
-        "baseAnalyzerId": settings["base_analyzer_id"],
-        "config": {"enableOcr": True, "enableLayout": True, "returnDetails": True},
-        "fieldSchema": field_schema,
-    }
-    models: dict[str, str] = {}
-    if settings.get("completion_model"):
-        models["completion"] = settings["completion_model"]
-    if settings.get("embedding_model"):
-        models["embedding"] = settings["embedding_model"]
-    if models:
-        body["models"] = models
-
     put_url = f"{base}/contentunderstanding/analyzers/{analyzer_id}?api-version={api_version}"
     logger.info("Creating Content Understanding analyzer '%s'", analyzer_id)
-    resp = client.put(put_url, headers=_headers(settings), json=body)
+    resp = client.put(put_url, headers=_headers(settings), json=analyzer_definition)
     if resp.status_code not in (200, 201):
         raise RuntimeError(
             f"Failed to create Content Understanding analyzer '{analyzer_id}': {resp.status_code} - {resp.text}"
@@ -327,6 +377,37 @@ def _ensure_analyzer(
     # Confirm the analyzer is queryable before use.
     _wait_analyzer_ready(client, settings, analyzer_id)
     _ready_analyzers.add(analyzer_id)
+
+
+def _build_analyzer_definition(
+    settings: dict[str, Any],
+    field_schema: dict[str, Any],
+    analyzer_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    options = analyzer_options or {}
+    config = {"enableOcr": True, "enableLayout": True, "returnDetails": True}
+    option_config = options.get("config")
+    if isinstance(option_config, dict):
+        config.update(option_config)
+
+    definition: dict[str, Any] = {
+        "description": str(options.get("description") or field_schema.get("description") or "ARGUS analyzer"),
+        "baseAnalyzerId": str(options.get("base_analyzer_id") or settings["base_analyzer_id"]),
+        "config": config,
+        "fieldSchema": field_schema,
+    }
+
+    models: dict[str, str] = {}
+    if settings.get("completion_model"):
+        models["completion"] = settings["completion_model"]
+    if settings.get("embedding_model"):
+        models["embedding"] = settings["embedding_model"]
+    option_models = options.get("models")
+    if isinstance(option_models, dict):
+        models.update({str(key): str(value) for key, value in option_models.items() if value})
+    if models:
+        definition["models"] = models
+    return definition
 
 
 def _wait_analyzer_ready(client: httpx.Client, settings: dict[str, Any], analyzer_id: str) -> None:
@@ -377,6 +458,7 @@ def get_cu_extraction(
     example_schema: dict[str, Any],
     dataset_name: str = "default",
     cosmos_config_container=None,
+    analyzer_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run Content Understanding full-analyzer extraction on a document.
 
@@ -387,8 +469,9 @@ def get_cu_extraction(
       * ``raw``             - the raw CU ``result`` block (for diagnostics)
     """
     settings = _cu_settings(cosmos_config_container)
-    field_schema = _build_field_schema(dataset_name, example_schema)
-    analyzer_id = _analyzer_id(dataset_name, field_schema)
+    field_schema = _build_field_schema(dataset_name, example_schema, analyzer_options)
+    analyzer_definition = _build_analyzer_definition(settings, field_schema, analyzer_options)
+    analyzer_id = _analyzer_id(dataset_name, analyzer_definition)
 
     with open(file_path, "rb") as fh:
         data_b64 = base64.b64encode(fh.read()).decode("utf-8")
@@ -398,7 +481,7 @@ def get_cu_extraction(
     api_version = settings["api_version"]
 
     with httpx.Client(timeout=_DEFAULT_TIMEOUT) as client:
-        _ensure_analyzer(client, settings, analyzer_id, field_schema)
+        _ensure_analyzer(client, settings, analyzer_id, analyzer_definition)
 
         analyze_url = f"{base}/contentunderstanding/analyzers/{analyzer_id}:analyze?api-version={api_version}"
         payload = {"inputs": [{"data": data_b64, "mimeType": mime_type, "name": os.path.basename(file_path)}]}
@@ -415,6 +498,40 @@ def get_cu_extraction(
             result_payload = _poll_operation(client, settings, operation_location, success_values=("succeeded",))
 
     return _normalize_result(result_payload, example_schema)
+
+
+def prepare_cu_analyzer(
+    example_schema: dict[str, Any],
+    dataset_name: str = "default",
+    cosmos_config_container=None,
+    analyzer_options: dict[str, Any] | None = None,
+) -> str:
+    """Create or reuse a deterministic analyzer without processing a document."""
+    settings = _cu_settings(cosmos_config_container)
+    field_schema = _build_field_schema(dataset_name, example_schema, analyzer_options)
+    analyzer_definition = _build_analyzer_definition(settings, field_schema, analyzer_options)
+    analyzer_id = _analyzer_id(dataset_name, analyzer_definition)
+    with httpx.Client(timeout=_DEFAULT_TIMEOUT) as client:
+        _ensure_analyzer(client, settings, analyzer_id, analyzer_definition)
+    return analyzer_id
+
+
+def describe_cu_analyzer(
+    example_schema: dict[str, Any],
+    dataset_name: str = "default",
+    cosmos_config_container=None,
+    analyzer_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the deterministic analyzer id, definition, and configuration hash."""
+    settings = _cu_settings(cosmos_config_container)
+    field_schema = _build_field_schema(dataset_name, example_schema, analyzer_options)
+    analyzer_definition = _build_analyzer_definition(settings, field_schema, analyzer_options)
+    canonical = json.dumps(analyzer_definition, sort_keys=True, separators=(",", ":"))
+    return {
+        "analyzer_id": _analyzer_id(dataset_name, analyzer_definition),
+        "definition": analyzer_definition,
+        "configuration_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+    }
 
 
 def _normalize_result(result_payload: dict[str, Any], example_schema: dict[str, Any]) -> dict[str, Any]:

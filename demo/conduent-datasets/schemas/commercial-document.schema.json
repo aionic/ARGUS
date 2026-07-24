@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conduent.example/schemas/commercial-document-v1.json",
+  "schema_id": "commercial-document-v1",
+  "schema_version": "1.0.0",
+  "title": "Commercial Document Extraction",
+  "type": "object",
+  "properties": {
+    "invoice_date": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Invoice Date"
+    },
+    "invoice_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Invoice Number"
+    },
+    "unit_price": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Unit Price"
+    },
+    "invoice_total": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Invoice Total"
+    },
+    "total": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Total"
+    },
+    "vendor_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Vendor Name"
+    },
+    "vendor_tax_id": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Vendor Tax ID"
+    },
+    "cosignee_name": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Cosignee Name"
+    },
+    "sales_order_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Sales Order Number"
+    },
+    "terms": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Terms"
+    },
+    "originator": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Originator"
+    },
+    "sold_to": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Sold To"
+    },
+    "ship_to": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Ship To"
+    },
+    "ship_from": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Ship From"
+    },
+    "ship_marks": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Ship Marks"
+    },
+    "order_date": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Order Date"
+    },
+    "ship_date": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Ship Date"
+    },
+    "customer_number": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Customer Number"
+    },
+    "customer_po": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Customer PO"
+    },
+    "quantity_ordered": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Quantity Ordered"
+    },
+    "desc": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Desc"
+    },
+    "harm_code": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Harm Code"
+    },
+    "country_of_origin": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Country of Origin"
+    },
+    "country_of_transshipment": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Country of Transshipment"
+    },
+    "transportation": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Transportation"
+    },
+    "total_weight": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Total Weight"
+    },
+    "unit_count": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Unit Count"
+    },
+    "total_value": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Total Value"
+    },
+    "currency_of_settlement": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Currency of Settlement"
+    },
+    "c_and_f_value": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "C&F Value"
+    },
+    "salesperson": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Salesperson"
+    },
+    "email": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null"
+      ],
+      "x-source-label": "Email"
+    }
+  },
+  "additionalProperties": false
+}

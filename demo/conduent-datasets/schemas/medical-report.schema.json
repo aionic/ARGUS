@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conduent.example/schemas/medical-report-v1.json",
+  "schema_id": "medical-report-v1",
+  "schema_version": "1.0.0",
+  "title": "Medical Report Extraction",
+  "type": "object",
+  "properties": {
+    "doctor": {
+      "type": "object",
+      "properties": {
+        "specialty": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "clinic": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "fax": {
+          "type": "string"
+        }
+      }
+    },
+    "patient": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "post_surgery_follow_up": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "ODv": {
+            "type": "string"
+          },
+          "ODT": {
+            "type": "string"
+          },
+          "OSv": {
+            "type": "string"
+          },
+          "OST": {
+            "type": "string"
+          },
+          "therapy": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "pre_surgery_evaluation": {
+      "type": "object",
+      "properties": {
+        "anamnesis_data": {
+          "type": "string"
+        },
+        "night_glare": {
+          "type": "string"
+        },
+        "contact_lens_tolerance": {
+          "type": "string"
+        },
+        "medications": {
+          "type": "string"
+        },
+        "ocular_dryness": {
+          "type": "string"
+        },
+        "collagen_disorders": {
+          "type": "string"
+        },
+        "diabetes": {
+          "type": "string"
+        },
+        "autorefractometry": {
+          "type": "object",
+          "properties": {
+            "OD": {
+              "type": "string"
+            },
+            "OS": {
+              "type": "string"
+            }
+          }
+        },
+        "visual_acuity": {
+          "type": "object",
+          "properties": {
+            "OD": {
+              "type": "string"
+            },
+            "OS": {
+              "type": "string"
+            }
+          }
+        },
+        "corneal_map": {
+          "type": "string"
+        },
+        "schirmer_tear_test": {
+          "type": "string"
+        },
+        "pupilometry": {
+          "type": "string"
+        },
+        "pachymetry": {
+          "type": "object",
+          "properties": {
+            "OD": {
+              "type": "string"
+            },
+            "OS": {
+              "type": "string"
+            }
+          }
+        },
+        "cornea": {
+          "type": "string"
+        },
+        "crystalline_lens": {
+          "type": "string"
+        },
+        "fundus": {
+          "type": "string"
+        },
+        "tonometry": {
+          "type": "string"
+        },
+        "eyelid_conjunctiva_anomalies": {
+          "type": "string"
+        }
+      }
+    },
+    "categorization": {
+      "type": "string",
+      "enum": [
+        "invoice",
+        "medical_report",
+        "N/A"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "x-repair-notes": [
+    "Moved categorization into properties and constrained it to prompt-supported values."
+  ]
+}

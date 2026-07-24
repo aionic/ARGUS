@@ -1,0 +1,70 @@
+{
+  "variants": [
+    {
+      "name": "baseline-current",
+      "description": "Current key-name-only Content Understanding analyzer with the ARGUS OCR confidence preflight.",
+      "vendor": "azure-content-understanding",
+      "profile": "baseline",
+      "ocr_preflight": true,
+      "preprocessing": {
+        "mode": "none"
+      }
+    },
+    {
+      "name": "semantic-guided",
+      "description": "Dataset-specific field descriptions and refined extraction types without field-confidence estimation.",
+      "vendor": "azure-content-understanding",
+      "profile": "guided",
+      "ocr_preflight": true,
+      "preprocessing": {
+        "mode": "none"
+      }
+    },
+    {
+      "name": "selective-confidence",
+      "description": "Semantic guidance plus source and confidence estimation for business-critical fields only.",
+      "vendor": "azure-content-understanding",
+      "profile": "selective-confidence",
+      "ocr_preflight": true,
+      "preprocessing": {
+        "mode": "none"
+      }
+    },
+    {
+      "name": "full-confidence",
+      "description": "All leaf fields use extractive mode with source and confidence estimation.",
+      "vendor": "azure-content-understanding",
+      "profile": "full-confidence",
+      "ocr_preflight": true,
+      "preprocessing": {
+        "mode": "none"
+      }
+    },
+    {
+      "name": "selective-confidence-preprocessed",
+      "description": "Selective-confidence analyzer with conservative autocontrast for commercial scans and scaled handwriting enhancement for enrollment forms.",
+      "vendor": "azure-content-understanding",
+      "profile": "selective-confidence",
+      "ocr_preflight": true,
+      "applies_to": [
+        "commercial-documents",
+        "enrollments"
+      ],
+      "datasets": {
+        "commercial-documents": {
+          "preprocessing": {
+            "mode": "autocontrast",
+            "cutoff_percent": 0.5
+          }
+        },
+        "enrollments": {
+          "preprocessing": {
+            "mode": "handwriting",
+            "cutoff_percent": 0.5,
+            "scale": 1.5
+          }
+        }
+      }
+    }
+  ]
+}

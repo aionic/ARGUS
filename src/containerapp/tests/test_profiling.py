@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from profiling import build_profile_report  # noqa: E402
+from profiling import build_profile_report, resolve_profile_sources  # noqa: E402
 
 
 def test_build_profile_report_aggregates_successes_failures_and_quality():
@@ -44,3 +44,11 @@ def test_build_profile_report_aggregates_successes_failures_and_quality():
     assert report["per_tier"]["premium"]["avg_usd_per_page"] == 0.3
     assert report["per_tier"]["premium"]["success_rate"] == 1.0
     assert report["generated_at"] == "2026-06-24T00:00:00+00:00"
+
+
+def test_resolve_profile_sources_uses_canonical_corpus():
+    sources = resolve_profile_sources("default-dataset")
+
+    assert len(sources) == 1
+    assert sources[0].file_name == "Invoice Sample.pdf"
+    assert "conduent-datasets" in str(sources[0].path)

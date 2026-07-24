@@ -1,0 +1,14 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+USER root
+COPY --chown=appuser:appuser demo/conduent-datasets/catalog.json /data/conduent-datasets/catalog.json
+COPY --chown=appuser:appuser demo/conduent-datasets/README.md /data/conduent-datasets/README.md
+COPY --chown=appuser:appuser demo/conduent-datasets/SCHEMA_TRUTH_MAPPING.md /data/conduent-datasets/SCHEMA_TRUTH_MAPPING.md
+COPY --chown=appuser:appuser demo/conduent-datasets/datasets /data/conduent-datasets/datasets
+COPY --chown=appuser:appuser demo/conduent-datasets/schemas /data/conduent-datasets/schemas
+COPY --chown=appuser:appuser demo/conduent-datasets/evaluation /data/conduent-datasets/evaluation
+USER appuser
+
+ENV CONDUENT_CORPUS_ROOT=/data/conduent-datasets
+CMD ["python", "/app/evaluation/job_entrypoint.py"]
