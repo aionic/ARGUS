@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Pilot', 'Tune', 'Freeze', 'Holdout', 'Score', 'Finalize', 'Report')]
+    [ValidateSet('Pilot', 'Tune', 'Freeze', 'Holdout', 'Score', 'Finalize', 'Report', 'Export')]
     [string]$Stage = 'Pilot',
     [string]$ResourceGroup = 'rg-argus-dev',
     [string]$BackendApp = '',
