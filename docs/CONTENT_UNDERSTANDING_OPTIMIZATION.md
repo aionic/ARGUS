@@ -111,12 +111,57 @@ inside a VNet-integrated Container Apps Job:
 ```
 
 The launch script builds a dedicated evaluation image from the deployed backend
-image plus only the active corpus files (never `source-archive`). The job
+image, overlays the current evaluator code, and includes only the active corpus
+files (never `source-archive`). The job
 publishes that canonical subset to a private blob prefix using its user-assigned
 managed identity, then writes JSON, CSV, Markdown, field-level evidence, raw
 vendor responses, and the run manifest to the private result prefix. The
 production profiling endpoint reads the same canonical private corpus rather
 than carrying a second bundled copy.
+
+After the frozen holdout completes, rebuild the combined report from cached raw
+results and retrieve it without making additional AI calls:
+
+```powershell
+.\scripts\run_conduent_bakeoff.ps1 -Stage Finalize
+.\scripts\run_conduent_bakeoff.ps1 -Stage Report -SkipImageBuild
+```
+
+## Frozen bake-off results
+
+The tuning, calibration, and single blind-holdout run completed against corpus
+hash `15bb0b7a...e9ca2`. The combined package contains 147 successful
+document-variant runs at a measured processing cost of **$2.665560**. The blind
+holdout accounts for 96 runs and **$1.778283** of that total.
+
+| Dataset | Recommended holdout variant | Populated accuracy | Blank accuracy | OCR confidence | Cost | P95 latency |
+|---|---|---:|---:|---:|---:|---:|
+| CMS-1500 | `semantic-guided` for quality | 54.8% | 80.4% | 95.9% | $0.315728 | 39.42s |
+| CMS-1500 | `full-confidence` for cost/latency | 53.6% | 75.1% | 95.9% | $0.273368 | 33.17s |
+| Commercial | `baseline-current` | 41.9% | 76.3% | 74.7% | $0.044326 | 16.85s |
+| Enrollments | `full-confidence` | 64.3% | 84.3% | 89.8% | $0.059881 | 22.03s |
+
+No holdout document met the strict gate of 80% populated-field accuracy and 95%
+blank-field accuracy. The synthetic invoice was the only passing benchmark
+document, so it must not be used as evidence that the scanned production
+datasets are ready for straight-through processing.
+
+The results support these configuration decisions:
+
+1. Use semantic schema guidance for CMS-1500 when extraction quality is the
+   primary objective; use full confidence when the small accuracy tradeoff is
+   justified by lower cost and latency.
+2. Keep the commercial workflow on the baseline analyzer. Guided and confidence
+   variants materially reduced populated-field accuracy on the blind holdout.
+3. Use full confidence for enrollments. Populated accuracy was tied across
+   variants, while full confidence produced the best blank accuracy, complete
+   grounding coverage, lowest cost, and lowest latency.
+4. Do not promote any scanned-dataset variant to unattended processing yet.
+   Continue field-level error analysis and add representative labeled samples
+   before another separately frozen holdout.
+5. Treat OCR confidence as a scan-quality signal rather than extraction
+   correctness. Commercial scans had the lowest OCR confidence and extraction
+   accuracy, but high OCR confidence alone did not make CMS extraction pass.
 
 ## Decision gates
 
