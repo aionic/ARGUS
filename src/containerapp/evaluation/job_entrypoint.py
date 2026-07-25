@@ -10,8 +10,33 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-from evaluation.blob_io import upload_directory  # noqa: E402
+from evaluation.blob_io import download_prefix, upload_directory  # noqa: E402
 from evaluation.cli import main  # noqa: E402
+
+
+def print_report() -> int:
+    required = [
+        "BLOB_ACCOUNT_URL",
+        "EVALUATION_BLOB_CONTAINER",
+        "EVALUATION_OUTPUT_BLOB_PREFIX",
+    ]
+    missing = [name for name in required if not os.getenv(name)]
+    if missing:
+        raise ValueError(f"Report stage is missing settings: {', '.join(missing)}")
+    output_dir = Path(os.getenv("EVALUATION_OUTPUT_DIR", "/tmp/argus-evaluation"))
+    download_prefix(
+        os.environ["BLOB_ACCOUNT_URL"],
+        os.environ["EVALUATION_BLOB_CONTAINER"],
+        os.environ["EVALUATION_OUTPUT_BLOB_PREFIX"],
+        output_dir,
+    )
+    for name in ("report.md", "summary.csv"):
+        path = output_dir / name
+        if not path.exists():
+            raise FileNotFoundError(f"Evaluation report artifact not found: {path}")
+        print(f"--- {name} ---")
+        print(path.read_text(encoding="utf-8"))
+    return 0
 
 
 def build_arguments() -> list[str]:
@@ -63,6 +88,8 @@ def build_arguments() -> list[str]:
 
 
 if __name__ == "__main__":
+    if os.getenv("EVALUATION_STAGE", "Pilot").lower() == "report":
+        raise SystemExit(print_report())
     corpus_root = os.getenv("CONDUENT_CORPUS_ROOT")
     if (
         corpus_root
