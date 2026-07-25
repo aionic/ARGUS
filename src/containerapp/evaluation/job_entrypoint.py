@@ -82,6 +82,17 @@ def build_arguments() -> list[str]:
                 "--resume-output",
             ]
         )
+    elif stage == "finalize":
+        arguments.extend(
+            [
+                "--mode",
+                "score",
+                "--splits",
+                "tuning,calibration,holdout",
+                "--allow-holdout",
+                "--resume-output",
+            ]
+        )
     else:
         raise ValueError(f"Unsupported evaluation stage: {stage}")
     return arguments

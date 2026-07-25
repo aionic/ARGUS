@@ -493,6 +493,10 @@ def write_reports(report: dict[str, Any], output_dir: Path) -> None:
         "A passing document has at least 80% normalized accuracy on populated truth fields and "
         "at least 95% accuracy on known blank fields.",
         "",
+        f"Total measured processing cost: ${float((report.get('totals') or {}).get('total_cost_usd') or 0):.6f} "
+        f"across {int((report.get('totals') or {}).get('documents_succeeded') or 0)} successful "
+        "document-variant runs.",
+        "",
         "| Dataset | Split | Variant | Docs | Populated accuracy | Blank accuracy | Confidence coverage | OCR confidence | Grounding | Cost | Cost/page | Cost/correct field | P95 latency |",
         "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]

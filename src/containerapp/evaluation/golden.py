@@ -293,7 +293,20 @@ def aggregate_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
                 "cost_per_passing_document_usd": (total_cost / passing_documents if passing_documents else None),
             }
         )
-    return {"summaries": summaries, "runs": runs}
+    successful_runs = [run for run in runs if not run.get("error")]
+    totals = {
+        "documents_attempted": len(runs),
+        "documents_succeeded": len(successful_runs),
+        "documents_failed": len(runs) - len(successful_runs),
+        "total_cost_usd": sum(float(run.get("cost", {}).get("total_usd") or 0) for run in successful_runs),
+        "extraction_cost_usd": sum(
+            float(run.get("cost", {}).get("extraction_total_usd") or 0) for run in successful_runs
+        ),
+        "ocr_preflight_cost_usd": sum(
+            float(run.get("cost", {}).get("ocr_preflight_usd") or 0) for run in successful_runs
+        ),
+    }
+    return {"summaries": summaries, "runs": runs, "totals": totals}
 
 
 def _document_passed(metrics: dict[str, Any]) -> bool:

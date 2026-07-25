@@ -13,6 +13,17 @@ def test_job_entrypoint_builds_holdout_guard_arguments(monkeypatch) -> None:
     assert arguments[arguments.index("--splits") + 1] == "holdout"
 
 
+def test_finalize_entrypoint_scores_all_frozen_splits(monkeypatch) -> None:
+    monkeypatch.setenv("EVALUATION_STAGE", "Finalize")
+
+    arguments = build_arguments()
+
+    assert arguments[arguments.index("--mode") + 1] == "score"
+    assert arguments[arguments.index("--splits") + 1] == "tuning,calibration,holdout"
+    assert "--allow-holdout" in arguments
+    assert "--resume-output" in arguments
+
+
 def test_print_report_downloads_and_emits_artifacts(monkeypatch, tmp_path: Path, capsys) -> None:
     monkeypatch.setenv("BLOB_ACCOUNT_URL", "https://example.blob.core.windows.net/")
     monkeypatch.setenv("EVALUATION_BLOB_CONTAINER", "datasets")

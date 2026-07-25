@@ -59,3 +59,5 @@ def test_aggregate_runs_includes_cost_latency_and_calibration() -> None:
     assert summary["coverage"] == 1
     assert summary["total_cost_usd"] == 0.02
     assert summary["avg_latency_seconds"] == 2
+    assert report["totals"]["documents_succeeded"] == 1
+    assert report["totals"]["total_cost_usd"] == 0.02
