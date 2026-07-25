@@ -365,7 +365,7 @@ def _load_result(
     envelope = json.loads(path.read_text(encoding="utf-8"))
     metadata = envelope.get("metadata") or {}
     expected = {
-        "document_id": case.document_id,
+        "sample": case.document_id,
         "document_sha256": case.manifest["content_sha256"],
         "run_configuration_hash": configuration["run_configuration_hash"],
         "corpus_hash": corpus_hash,

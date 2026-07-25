@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from evaluation.cli import _enforce_holdout_lock, _result_path
+from evaluation.cli import _enforce_holdout_lock, _load_result, _result_path
 from evaluation.corpus import CorpusCase
 
 
@@ -33,6 +33,27 @@ def test_result_cache_path_changes_with_configuration(tmp_path: Path) -> None:
     second = {**first, "run_configuration_hash": "b" * 64}
 
     assert _result_path(tmp_path, case, first) != _result_path(tmp_path, case, second)
+
+
+def test_cached_result_accepts_run_identity_sample_key(tmp_path: Path) -> None:
+    case = _case(tmp_path)
+    configuration = {"run_configuration_hash": "a" * 64}
+    cache_path = tmp_path / "result.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "sample": case.document_id,
+                    "document_sha256": case.manifest["content_sha256"],
+                    "run_configuration_hash": configuration["run_configuration_hash"],
+                    "corpus_hash": "corpus",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _load_result(cache_path, case, configuration, "corpus")["metadata"]["sample"] == case.document_id
 
 
 def test_holdout_requires_matching_frozen_lock(tmp_path: Path) -> None:
