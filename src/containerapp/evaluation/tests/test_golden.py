@@ -25,6 +25,8 @@ def test_score_document_reports_accuracy_presence_and_confidence() -> None:
 
 def test_confidence_path_matches_content_understanding_sanitization() -> None:
     assert confidence_path("Table.Items[0].Item#") == "Table.Items[0].Item"
+    long_name = "qualifying_event_spouse_changes_from_full_time_to_part_time_employment"
+    assert len(confidence_path(long_name)) == 64
 
 
 def test_hallucination_rate_includes_unknown_array_items() -> None:

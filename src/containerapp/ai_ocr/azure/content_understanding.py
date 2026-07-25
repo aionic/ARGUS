@@ -87,14 +87,29 @@ def _headers(settings: dict[str, Any], *, json_body: bool = True) -> dict[str, s
 # ─────────────────────────────────────────────────────────────────────────────
 # Schema mapping: ARGUS example-JSON  ->  CU fieldSchema
 # ─────────────────────────────────────────────────────────────────────────────
-def _sanitize_name(name: str) -> str:
+_FIELD_NAME_MAX_LENGTH = 64
+
+
+def sanitize_cu_field_name(name: str) -> str:
     """Convert an ARGUS field name to a CU-safe field key."""
     safe = _NAME_RE.sub("_", name).strip("_")
     if not safe:
         safe = "field"
     if not safe[0].isalpha():
         safe = f"f_{safe}"
+    if len(safe) > _FIELD_NAME_MAX_LENGTH:
+        suffix = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+        safe = f"{safe[: _FIELD_NAME_MAX_LENGTH - len(suffix) - 1]}_{suffix}"
     return safe
+
+
+def _sanitize_name(name: str) -> str:
+    return sanitize_cu_field_name(name)
+
+
+def _deduplicate_name(key: str, index: int) -> str:
+    suffix = f"_{index}"
+    return f"{key[: _FIELD_NAME_MAX_LENGTH - len(suffix)]}{suffix}"
 
 
 def _humanize_field_name(name: str) -> str:
@@ -181,7 +196,7 @@ def _example_object_to_properties(
         candidate = key
         i = 1
         while candidate in used:
-            candidate = f"{key}_{i}"
+            candidate = _deduplicate_name(key, i)
             i += 1
         used.add(candidate)
         path = f"{prefix}.{original_key}" if prefix else str(original_key)
@@ -254,7 +269,7 @@ def _normalize_object(cu_fields: dict[str, Any], example_obj: dict[str, Any]) ->
         candidate = key
         i = 1
         while candidate in used:
-            candidate = f"{key}_{i}"
+            candidate = _deduplicate_name(key, i)
             i += 1
         used.add(candidate)
         cu_field = cu_fields.get(candidate)

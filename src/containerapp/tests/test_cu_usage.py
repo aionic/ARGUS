@@ -80,3 +80,16 @@ def test_analyzer_id_changes_with_processing_configuration() -> None:
     cheaper = cu._build_analyzer_definition(settings, field_schema, {"config": {"enableLayout": False}})
 
     assert cu._analyzer_id("invoice", baseline) != cu._analyzer_id("invoice", cheaper)
+
+
+def test_long_field_names_are_stable_and_within_cu_limit() -> None:
+    original_name = "qualifying_event_spouse_changes_from_full_time_to_part_time_employment"
+    field_schema = cu._build_field_schema("enrollment", {original_name: ""})
+    sanitized_name = next(iter(field_schema["fields"]))
+
+    assert len(sanitized_name) == 64
+    assert sanitized_name == cu.sanitize_cu_field_name(original_name)
+    assert cu._normalize_object(
+        {sanitized_name: {"type": "string", "valueString": "Yes"}},
+        {original_name: ""},
+    ) == {original_name: "Yes"}

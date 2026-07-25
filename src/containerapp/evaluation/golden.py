@@ -9,8 +9,9 @@ from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from ai_ocr.azure.content_understanding import sanitize_cu_field_name
+
 _NORMALIZE_RE = re.compile(r"[\s.,/\\:#()\-_$%]+")
-_FIELD_NAME_RE = re.compile(r"[^a-zA-Z0-9_]")
 
 
 def flatten_json(value: Any, prefix: str = "") -> dict[str, Any]:
@@ -57,24 +58,15 @@ def exact_value(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
-def _sanitize_name(name: str) -> str:
-    safe = _FIELD_NAME_RE.sub("_", name).strip("_")
-    if not safe:
-        safe = "field"
-    if not safe[0].isalpha():
-        safe = f"f_{safe}"
-    return safe
-
-
 def confidence_path(field_path: str) -> str:
     """Convert an ARGUS field path to the sanitized path returned by CU."""
     parts = []
     for segment in field_path.split("."):
         match = re.fullmatch(r"([^\[]+)(.*)", segment)
         if not match:
-            parts.append(_sanitize_name(segment))
+            parts.append(sanitize_cu_field_name(segment))
             continue
-        parts.append(f"{_sanitize_name(match.group(1))}{match.group(2)}")
+        parts.append(f"{sanitize_cu_field_name(match.group(1))}{match.group(2)}")
     return ".".join(parts)
 
 
