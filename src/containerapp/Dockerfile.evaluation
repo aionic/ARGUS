@@ -2,6 +2,7 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 USER root
+COPY --chown=appuser:appuser src/containerapp/evaluation /app/evaluation
 COPY --chown=appuser:appuser demo/conduent-datasets/catalog.json /data/conduent-datasets/catalog.json
 COPY --chown=appuser:appuser demo/conduent-datasets/README.md /data/conduent-datasets/README.md
 COPY --chown=appuser:appuser demo/conduent-datasets/SCHEMA_TRUTH_MAPPING.md /data/conduent-datasets/SCHEMA_TRUTH_MAPPING.md
