@@ -19,11 +19,14 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
 if (-not $BackendApp) {
-    $BackendApp = az containerapp list `
-        --resource-group $ResourceGroup `
-        --query '[?tags."azd-service-name"==''backend''].name | [0]' `
-        --output tsv `
-        --only-show-errors
+    $BackendApp = (
+        az containerapp list `
+            --resource-group $ResourceGroup `
+            --output json `
+            --only-show-errors | ConvertFrom-Json -Depth 100 |
+            Where-Object { $_.tags.'azd-service-name' -eq 'backend' } |
+            Select-Object -First 1
+    ).name
 }
 if (-not $BackendApp) {
     throw "No backend Container App was found in resource group '$ResourceGroup'."
@@ -52,7 +55,12 @@ if (-not $storageAccountName -or -not $blobAccountUrl -or -not $datasetContainer
 $evaluationContainer = $datasetContainer
 $corpusPrefix = 'evaluation/corpus/conduent-v1'
 $outputPrefix = "evaluation/results/$RunName"
-$imageTag = (Get-FileHash 'demo\conduent-datasets\catalog.json' -Algorithm SHA256).Hash.Substring(0, 12).ToLowerInvariant()
+$corpusTag = (Get-FileHash 'demo\conduent-datasets\catalog.json' -Algorithm SHA256).Hash.Substring(0, 12).ToLowerInvariant()
+$codeTag = (git rev-parse --short=12 HEAD).Trim().ToLowerInvariant()
+if (-not $codeTag) {
+    throw 'Unable to resolve the current Git commit for the evaluation image tag.'
+}
+$imageTag = "$corpusTag-$codeTag"
 $evaluationImage = "$($registry.server)/argus/evaluation:$imageTag"
 
 if (-not $SkipImageBuild) {

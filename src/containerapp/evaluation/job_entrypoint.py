@@ -6,8 +6,12 @@ import os
 import sys
 from pathlib import Path
 
-from evaluation.blob_io import upload_directory
-from evaluation.cli import main
+APP_ROOT = Path(__file__).resolve().parent.parent
+if str(APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(APP_ROOT))
+
+from evaluation.blob_io import upload_directory  # noqa: E402
+from evaluation.cli import main  # noqa: E402
 
 
 def build_arguments() -> list[str]:
