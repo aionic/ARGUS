@@ -176,7 +176,6 @@ def _build_workbook(report: dict[str, Any], output: Path) -> None:
         )
     _header(dataset_sheet[1])
     _style_sheet(dataset_sheet, "A2")
-    dataset_sheet.auto_filter.ref = dataset_sheet.dimensions
     for column in ("F", "G", "H", "I", "J"):
         for cell in dataset_sheet[column][1:]:
             cell.number_format = "0.0%"
@@ -242,7 +241,6 @@ def _build_workbook(report: dict[str, Any], output: Path) -> None:
             )
     _header(field_sheet[1])
     _style_sheet(field_sheet, "A2")
-    field_sheet.auto_filter.ref = field_sheet.dimensions
     field_sheet.column_dimensions["A"].width = 24
     field_sheet.column_dimensions["B"].width = 14
     field_sheet.column_dimensions["C"].width = 28
@@ -331,7 +329,6 @@ def _build_workbook(report: dict[str, Any], output: Path) -> None:
         )
     _header(document_sheet[1])
     _style_sheet(document_sheet, "A2")
-    document_sheet.auto_filter.ref = document_sheet.dimensions
     for column in ("H", "I", "J", "K", "L"):
         for cell in document_sheet[column][1:]:
             cell.number_format = "0.0%"
