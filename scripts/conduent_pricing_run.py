@@ -28,6 +28,7 @@ import csv
 import json
 import os
 import statistics
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -86,6 +87,7 @@ class Sample:
 class DocumentResult:
     sample: Sample
     status: str
+    repeat: int = 1
     total_usd: float = 0.0
     list_total_usd: float = 0.0
     discount_pct: float = 0.0
@@ -241,11 +243,12 @@ class ArgusClient:
         response = self.session.post(f"{self.base_url}/api/configuration", json=configuration, timeout=self.timeout)
         response.raise_for_status()
 
-    def upload(self, dataset: str, path: Path) -> str:
+    def upload(self, dataset: str, path: Path, upload_name: str | None = None) -> str:
+        name = upload_name or path.name
         with path.open("rb") as handle:
             response = self.session.post(
                 f"{self.base_url}/api/datasets/{dataset}/upload",
-                files={"file": (path.name, handle)},
+                files={"file": (name, handle)},
                 params={"run_summary": "false", "run_evaluation": "false"},
                 timeout=self.timeout,
             )
@@ -311,11 +314,13 @@ def _failure_reason(document: dict[str, Any]) -> str | None:
     return None
 
 
-def run_sample(client: ArgusClient, sample: Sample, dataset: str, poll_timeout: int) -> DocumentResult:
+def run_sample(client: ArgusClient, sample: Sample, dataset: str, poll_timeout: int, repeat: int = 1) -> DocumentResult:
+    # Each pass uploads under its own blob name so polling can never read the
+    # already-completed document from a previous pass.
     try:
-        document_id = client.upload(dataset, sample.path)
+        document_id = client.upload(dataset, sample.path, f"r{repeat}__{sample.name}")
     except Exception as exc:  # noqa: BLE001 - one bad document must not end the round
-        return DocumentResult(sample, "upload_failed", error=f"{type(exc).__name__}: {exc}")
+        return DocumentResult(sample, "upload_failed", repeat=repeat, error=f"{type(exc).__name__}: {exc}")
 
     deadline = time.monotonic() + poll_timeout
     document: dict[str, Any] | None = None
@@ -329,14 +334,14 @@ def run_sample(client: ArgusClient, sample: Sample, dataset: str, poll_timeout: 
             continue
         reason = _failure_reason(document)
         if reason:
-            return DocumentResult(sample, "failed", error=reason)
+            return DocumentResult(sample, "failed", repeat=repeat, error=reason)
         if _is_complete(document):
             break
     else:
-        return DocumentResult(sample, "timeout", error=f"Not completed within {poll_timeout}s")
+        return DocumentResult(sample, "timeout", repeat=repeat, error=f"Not completed within {poll_timeout}s")
 
     if not document or not _is_complete(document):
-        return DocumentResult(sample, "timeout", error=f"Not completed within {poll_timeout}s")
+        return DocumentResult(sample, "timeout", repeat=repeat, error=f"Not completed within {poll_timeout}s")
 
     properties = document.get("properties") or {}
     cost = properties.get("cost") or {}
@@ -349,6 +354,7 @@ def run_sample(client: ArgusClient, sample: Sample, dataset: str, poll_timeout: 
     return DocumentResult(
         sample=sample,
         status="quality_gated" if gated else "ok",
+        repeat=repeat,
         total_usd=total_usd,
         list_total_usd=float(cost.get("list_total_usd") or total_usd),
         discount_pct=float(cost.get("discount_pct") or 0.0),
@@ -368,24 +374,27 @@ def run_round(
     datasets: dict[str, str],
     poll_timeout: int,
     workers: int,
+    repeats: int,
 ) -> list[DocumentResult]:
-    print(f"\n=== Round: {bucket.label} ({len(samples)} images, tier={bucket.tier}) ===")
     results: list[DocumentResult] = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [
-            pool.submit(run_sample, client, sample, datasets[sample.group.key], poll_timeout) for sample in samples
-        ]
-        for future in futures:
-            result = future.result()
-            results.append(result)
-            marker = "ok" if result.status == "ok" else result.status.upper()
-            if result.status == "ok":
-                detail = f"${result.usd_per_image:.6f}"
-            elif result.status == "quality_gated":
-                detail = "rejected before paid extraction: " + "; ".join(result.flag_reasons)
-            else:
-                detail = result.error or ""
-            print(f"  [{marker:>13}] {result.sample.group.key}/{result.sample.name}: {detail}")
+    for repeat in range(1, repeats + 1):
+        print(f"\n=== Round: {bucket.label} ({len(samples)} images, tier={bucket.tier}) pass {repeat}/{repeats} ===")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [
+                pool.submit(run_sample, client, sample, datasets[sample.group.key], poll_timeout, repeat)
+                for sample in samples
+            ]
+            for future in futures:
+                result = future.result()
+                results.append(result)
+                marker = "ok" if result.status == "ok" else result.status.upper()
+                if result.status == "ok":
+                    detail = f"${result.usd_per_image:.6f}"
+                elif result.status == "quality_gated":
+                    detail = "rejected before paid extraction: " + "; ".join(result.flag_reasons)
+                else:
+                    detail = result.error or ""
+                print(f"  [{marker:>13}] {result.sample.group.key}/{result.sample.name}: {detail}")
     return results
 
 
@@ -409,22 +418,41 @@ def summarize(results: list[DocumentResult]) -> dict[str, Any]:
     submitted = priced + gated
     costs = [result.usd_per_image for result in submitted]
     discounts = {result.discount_pct for result in priced}
+
+    # Repeats measure run-to-run nondeterminism: each pass yields its own per-image cost,
+    # and the spread across those passes is the range quoted for the document type.
+    passes = sorted({result.repeat for result in submitted})
+    pass_costs = [
+        statistics.fmean([result.usd_per_image for result in submitted if result.repeat == index]) for index in passes
+    ]
+    distinct_images = {result.sample.name for result in submitted}
+    gated_images = {result.sample.name for result in gated}
+
     return {
-        "images_attempted": len(results),
-        "images_submitted": len(submitted),
-        "images_quality_gated": len(gated),
-        "quality_gate_rate": (len(gated) / len(submitted)) if submitted else 0.0,
-        "quality_gated": [{"file": result.sample.name, "reasons": result.flag_reasons} for result in gated],
+        "images_attempted": len({result.sample.name for result in results}),
+        "images_submitted": len(distinct_images),
+        "images_quality_gated": len(gated_images),
+        "quality_gate_rate": (len(gated_images) / len(distinct_images)) if distinct_images else 0.0,
+        "quality_gated": sorted(
+            {
+                result.sample.name: {"file": result.sample.name, "reasons": result.flag_reasons} for result in gated
+            }.values(),
+            key=lambda entry: entry["file"],
+        ),
         "failures": [
             {"file": result.sample.name, "status": result.status, "error": result.error}
             for result in results
             if result.status not in ("ok", "quality_gated")
         ],
         "discount_pct": max(discounts) if discounts else 0.0,
+        "passes": len(passes),
+        "observations": len(submitted),
         "usd_per_image": statistics.fmean(costs) if costs else None,
-        "usd_per_image_median": statistics.median(costs) if costs else None,
-        "usd_per_image_min": min(costs) if costs else None,
-        "usd_per_image_max": max(costs) if costs else None,
+        "usd_per_image_low": min(pass_costs) if pass_costs else None,
+        "usd_per_image_high": max(pass_costs) if pass_costs else None,
+        "usd_per_image_pass_values": pass_costs,
+        "single_image_min": min(costs) if costs else None,
+        "single_image_max": max(costs) if costs else None,
         "total_usd": sum(costs),
         "total_pages": sum(result.pages for result in priced),
         "total_input_tokens": sum(result.input_tokens for result in priced),
@@ -478,12 +506,29 @@ def build_report(
 
 
 def _caveats(buckets: dict[str, Any]) -> list[str]:
-    caveats = [
+    caveats = []
+
+    passes = max((payload.get("passes") or 1 for payload in buckets.values()), default=1)
+    if passes > 1:
+        spreads = []
+        for payload in buckets.values():
+            low = payload.get("usd_per_image_low")
+            high = payload.get("usd_per_image_high")
+            if isinstance(low, (int, float)) and isinstance(high, (int, float)) and low:
+                spreads.append(f"{payload['label']} {(high - low) / low:.1%}")
+        caveats.append(
+            f"Extraction is NOT deterministic. The same image run twice produces different token usage and "
+            f"therefore a different cost. Across {passes} full passes the per-image cost moved by "
+            f"{', '.join(spreads)}. Quote the range, not the midpoint, and expect any re-run to land "
+            "somewhere inside it rather than reproducing an exact figure."
+        )
+
+    caveats.append(
         "Sample images are NOT quality-labeled. None of the supplied samples carry a good / medium / bad "
         "grading, so each rate is a blended average across whatever quality mix these particular images "
         "happen to represent. These rates cannot be projected onto the stated volume quality mix "
-        "(80/10/10 structured, 70/10/20 semi-structured, 70/20/10 handwritten) without a labeled sample set.",
-    ]
+        "(80/10/10 structured, 70/10/20 semi-structured, 70/20/10 handwritten) without a labeled sample set."
+    )
 
     sizes = ", ".join(f"{payload['label']} n={payload['images_submitted']}" for payload in buckets.values())
     caveats.append(
@@ -545,6 +590,12 @@ def _usd(value: float | None, places: int = 6) -> str:
     return f"${value:,.{places}f}" if isinstance(value, (int, float)) else "n/a"
 
 
+def _range(low: float | None, high: float | None) -> str:
+    if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+        return "n/a"
+    return f"{_usd(low)} - {_usd(high)}"
+
+
 def render_markdown(report: dict[str, Any]) -> str:
     lines: list[str] = []
     lines.append("# Conduent POC - Per-Document-Type Pricing")
@@ -553,19 +604,28 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Cost per image by document type")
     lines.append("")
+    passes = max((payload["passes"] for payload in report["buckets"].values()), default=1)
     lines.append(
         "Cost is per image submitted. Images rejected by the pre-extraction quality gate never reach paid "
         "extraction and are counted at $0."
     )
+    if passes > 1:
+        lines.append("")
+        lines.append(
+            f"The full sample was run {passes} times. Extraction is not deterministic, so token usage and "
+            "therefore cost vary between identical runs. The range below is the spread of the per-image cost "
+            f"across those {passes} passes; quote the range rather than a single figure."
+        )
     lines.append("")
-    lines.append("| Document type | Tier | Images | Quality-gated | Cost per image |")
-    lines.append("|---|---|---:|---:|---:|")
+    lines.append(f"| Document type | Tier | Images | Quality-gated | Cost per image | Range across {passes} runs |")
+    lines.append("|---|---|---:|---:|---:|---:|")
     for payload in report["buckets"].values():
         gated = payload["images_quality_gated"]
         gated_cell = f"{gated} ({payload['quality_gate_rate']:.0%})" if gated else "0"
         lines.append(
             f"| {payload['label']} | {payload['tier']} | {payload['images_submitted']} | "
-            f"{gated_cell} | {_usd(payload['usd_per_image'])} |"
+            f"{gated_cell} | {_usd(payload['usd_per_image'])} | "
+            f"{_range(payload['usd_per_image_low'], payload['usd_per_image_high'])} |"
         )
 
     lines.append("")
@@ -580,12 +640,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         for stage, usd in payload["cost_by_stage_usd"].items():
             lines.append(f"| {stage} | {_usd(usd)} | {usd / total:.1%} |")
         lines.append("")
-        lines.append("| Form type | Images | Gated | Cost per image | Truth data | Accuracy reportable |")
-        lines.append("|---|---:|---:|---:|---|---|")
+        lines.append("| Form type | Images | Gated | Cost per image | Range | Truth data | Accuracy reportable |")
+        lines.append("|---|---:|---:|---:|---:|---|---|")
         for group in payload["groups"].values():
             lines.append(
                 f"| {group['label']} | {group['images_submitted']} | {group['images_quality_gated']} | "
                 f"{_usd(group['usd_per_image'])} | "
+                f"{_range(group['usd_per_image_low'], group['usd_per_image_high'])} | "
                 f"{group['truth_source'] or 'none supplied'} | "
                 f"{'yes' if group['accuracy_reportable'] else 'NO - cost only'} |"
             )
@@ -615,6 +676,7 @@ def write_documents_csv(path: Path, results_by_bucket: dict[str, list[DocumentRe
                 "bucket",
                 "form_type",
                 "file",
+                "pass",
                 "status",
                 "tier",
                 "pages",
@@ -634,6 +696,7 @@ def write_documents_csv(path: Path, results_by_bucket: dict[str, list[DocumentRe
                         bucket_key,
                         result.sample.group.key,
                         result.sample.name,
+                        result.repeat,
                         result.status,
                         result.tier or "",
                         result.pages,
@@ -646,6 +709,30 @@ def write_documents_csv(path: Path, results_by_bucket: dict[str, list[DocumentRe
                         result.error or "",
                     ]
                 )
+
+
+def render_pdf(markdown_path: Path, pdf_path: Path) -> None:
+    """Render the rate card to PDF with pandoc for sharing outside the repo."""
+    subprocess.run(
+        [
+            "pandoc",
+            str(markdown_path),
+            "-o",
+            str(pdf_path),
+            "--pdf-engine=xelatex",
+            "-V",
+            "geometry:landscape,margin=1.5cm",
+            "-V",
+            "fontsize=10pt",
+            "-V",
+            "colorlinks=true",
+            "--metadata",
+            "title=Conduent POC - Per-Document-Type Pricing",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -661,12 +748,48 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", type=Path, default=None, help="Output directory for the rate card.")
     parser.add_argument("--poll-timeout", type=int, default=900, help="Seconds to wait for one document.")
     parser.add_argument("--workers", type=int, default=3, help="Concurrent documents in flight.")
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=3,
+        help="Full passes over the sample set. More than one is required to report a cost range.",
+    )
+    parser.add_argument("--pdf", action="store_true", help="Also render the rate card to PDF via pandoc.")
+    parser.add_argument(
+        "--render-from",
+        type=Path,
+        default=None,
+        help="Re-render markdown and PDF from an existing rate_card.json without re-running the samples.",
+    )
     parser.add_argument("--inventory-only", action="store_true", help="Validate the sample set and exit.")
     return parser.parse_args()
 
 
+def write_outputs(report: dict[str, Any], out_dir: Path, *, pdf: bool) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "rate_card.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    markdown_path = out_dir / "rate_card.md"
+    markdown_path.write_text(render_markdown(report), encoding="utf-8")
+    if pdf:
+        try:
+            render_pdf(markdown_path, out_dir / "rate_card.pdf")
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            print(f"\nPDF rendering failed: {getattr(exc, 'stderr', None) or exc}")
+    return markdown_path
+
+
 def main() -> int:
     args = parse_args()
+
+    if args.render_from:
+        report = json.loads(args.render_from.read_text(encoding="utf-8"))
+        report["caveats"] = _caveats(report["buckets"])
+        out_dir = args.out or args.render_from.parent
+        markdown_path = write_outputs(report, out_dir, pdf=args.pdf)
+        print(markdown_path.read_text(encoding="utf-8"))
+        print(f"\nRe-rendered from {args.render_from} into {out_dir}")
+        return 0
+
     source = args.source.resolve()
     samples, notes = build_inventory(source)
 
@@ -705,18 +828,21 @@ def main() -> int:
     for bucket_key in selected:
         bucket_samples = [sample for sample in samples if sample.group.bucket == bucket_key]
         results_by_bucket[bucket_key] = run_round(
-            client, BUCKETS[bucket_key], bucket_samples, datasets, args.poll_timeout, args.workers
+            client,
+            BUCKETS[bucket_key],
+            bucket_samples,
+            datasets,
+            args.poll_timeout,
+            args.workers,
+            max(1, args.repeats),
         )
 
     report = build_report(results_by_bucket, notes, source)
     out_dir = args.out or (source / "pricing-runs" / datetime.now(UTC).strftime("%Y%m%d-%H%M%S"))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "rate_card.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    markdown = render_markdown(report)
-    (out_dir / "rate_card.md").write_text(markdown, encoding="utf-8")
+    markdown_path = write_outputs(report, out_dir, pdf=args.pdf)
     write_documents_csv(out_dir / "documents.csv", results_by_bucket)
 
-    print("\n" + markdown)
+    print("\n" + markdown_path.read_text(encoding="utf-8"))
     print(f"\nWrote rate card to {out_dir}")
     return 0
 
