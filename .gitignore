@@ -160,3 +160,6 @@ demo/.DS_Store
 .dolt/
 *.db
 .beads-credential-key
+
+# Local scratch/working files (any location)
+_working/
