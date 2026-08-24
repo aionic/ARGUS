@@ -420,13 +420,20 @@ def _stage_totals(results: list[DocumentResult]) -> dict[str, float]:
 def summarize(results: list[DocumentResult]) -> dict[str, Any]:
     priced = [result for result in results if result.status == "ok"]
     gated = [result for result in results if result.status == "quality_gated"]
+    # Billing happens per image submitted. Quality-gated scans are rejected before any paid
+    # extraction runs, so they really do cost $0 and belong in the effective submitted rate.
+    submitted = priced + gated
     costs = [result.usd_per_image for result in priced]
     list_costs = [result.list_total_usd for result in priced]
+    submitted_costs = [result.usd_per_image for result in submitted]
+    submitted_list_costs = [result.list_total_usd for result in submitted]
     discounts = {result.discount_pct for result in priced}
     return {
         "images_attempted": len(results),
+        "images_submitted": len(submitted),
         "images_priced": len(priced),
         "images_quality_gated": len(gated),
+        "quality_gate_rate": (len(gated) / len(submitted)) if submitted else 0.0,
         "quality_gated": [{"file": result.sample.name, "reasons": result.flag_reasons} for result in gated],
         "failures": [
             {"file": result.sample.name, "status": result.status, "error": result.error}
@@ -434,6 +441,8 @@ def summarize(results: list[DocumentResult]) -> dict[str, Any]:
             if result.status not in ("ok", "quality_gated")
         ],
         "discount_pct": max(discounts) if discounts else 0.0,
+        "usd_per_submitted_image": statistics.fmean(submitted_costs) if submitted_costs else None,
+        "list_usd_per_submitted_image": statistics.fmean(submitted_list_costs) if submitted_list_costs else None,
         "usd_per_image_mean": statistics.fmean(costs) if costs else None,
         "usd_per_image_median": statistics.median(costs) if costs else None,
         "usd_per_image_min": min(costs) if costs else None,
@@ -457,7 +466,7 @@ def build_report(
     for bucket_key, results in results_by_bucket.items():
         bucket = BUCKETS[bucket_key]
         summary = summarize(results)
-        rate = summary["usd_per_image_mean"]
+        rate = summary["usd_per_submitted_image"]
 
         groups: dict[str, Any] = {}
         for group in [item for item in GROUPS if item.bucket == bucket_key]:
@@ -493,7 +502,9 @@ def build_report(
             "label": bucket.label,
             "tier": bucket.tier,
             "usd_per_image": rate,
-            "list_usd_per_image": summary["list_usd_per_image_mean"],
+            "list_usd_per_image": summary["list_usd_per_submitted_image"],
+            "usd_per_processed_image": summary["usd_per_image_mean"],
+            "list_usd_per_processed_image": summary["list_usd_per_image_mean"],
             "customer_quality_mix": bucket.quality_mix,
             "quality_labels_available": False,
             "projection": projection,
@@ -520,7 +531,7 @@ def _caveats(buckets: dict[str, Any]) -> list[str]:
         "(80/10/10 structured, 70/10/20 semi-structured, 70/20/10 handwritten) without a labeled sample set.",
     ]
 
-    sizes = ", ".join(f"{payload['label']} n={payload['images_priced']}" for payload in buckets.values())
+    sizes = ", ".join(f"{payload['label']} n={payload['images_submitted']}" for payload in buckets.values())
     caveats.append(
         f"Small sample size: rates are derived from a very small corpus ({sizes}). These are directional "
         "figures for business-case shaping, not contractual rates. A larger, quality-stratified sample is "
@@ -528,7 +539,7 @@ def _caveats(buckets: dict[str, Any]) -> list[str]:
     )
 
     no_truth = [
-        f"{group['label']} (n={group['images_priced']})"
+        f"{group['label']} (n={group['images_submitted']})"
         for payload in buckets.values()
         for group in payload["groups"].values()
         if not group["has_truth_data"]
@@ -540,19 +551,23 @@ def _caveats(buckets: dict[str, Any]) -> list[str]:
             + ". Cost for these types is measured and valid, but no extraction-accuracy claim is made."
         )
 
-    gated = [
-        f"{payload['label']} ({payload['images_quality_gated']} of {payload['images_attempted']})"
-        for payload in buckets.values()
-        if payload.get("images_quality_gated")
-    ]
-    if gated:
+    gated_detail = [(payload, entry) for payload in buckets.values() for entry in payload.get("quality_gated", [])]
+    if gated_detail:
+        files = "; ".join(
+            f"{entry['file']} in {payload['label']} ({', '.join(entry['reasons'])})" for payload, entry in gated_detail
+        )
+        summary = ", ".join(
+            f"{payload['label']} {payload['images_quality_gated']} of {payload['images_submitted']} "
+            f"({payload['quality_gate_rate']:.0%})"
+            for payload in buckets.values()
+            if payload.get("images_quality_gated")
+        )
         caveats.append(
-            "Quality-gated images are excluded from the rates: "
-            + "; ".join(gated)
-            + ". These scans were rejected by the pre-extraction quality gate, so no paid extraction ran and "
-            "they genuinely cost $0. They are excluded rather than averaged in, because counting them as $0 "
-            "would understate the true per-image rate. In production this gate is a cost saver on bad scans, "
-            "but those documents still require a downstream path (rescan or manual handling)."
+            f"{len(gated_detail)} image(s) failed the pre-extraction quality gate: {summary}. Affected files: "
+            f"{files}. These scans were rejected before any paid extraction ran, so they genuinely cost $0 and "
+            "are included at $0 in the submitted-image rate. They still consume a downstream path (rescan or "
+            "manual keying) whose cost is not represented here, and the gate rate observed in this small sample "
+            "should not be assumed to hold at production volume."
         )
 
     discounts = {payload.get("discount_pct") or 0.0 for payload in buckets.values()}
@@ -584,10 +599,16 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("## Per-image rate by document type")
     lines.append("")
     lines.append(
-        "| Document type | Tier | Images priced | Gated | ARGUS $/image (net) | ARGUS $/image (list) | "
-        "Customer pays today | Meets target |"
+        "Rates are per image *submitted*, which is the unit Conduent is billed on. Images rejected by the "
+        "pre-extraction quality gate never reach paid extraction and are included at $0. The processed-only "
+        "rate is shown alongside so both views are visible."
     )
-    lines.append("|---|---|---:|---:|---:|---:|---|:--:|")
+    lines.append("")
+    lines.append(
+        "| Document type | Tier | Images submitted | Quality-gated | Net $/image (submitted) | "
+        "Net $/image (processed only) | List $/image (submitted) | Customer pays today | Meets target |"
+    )
+    lines.append("|---|---|---:|---:|---:|---:|---:|---|:--:|")
     for payload in report["buckets"].values():
         projection = payload.get("projection") or {}
         current = (
@@ -596,10 +617,13 @@ def render_markdown(report: dict[str, Any]) -> str:
             else "n/a"
         )
         meets = "yes" if projection.get("meets_current_pricing") else "no"
+        gated = payload["images_quality_gated"]
+        gated_cell = f"{gated} ({payload['quality_gate_rate']:.0%})" if gated else "0"
         lines.append(
-            f"| {payload['label']} | {payload['tier']} | {payload['images_priced']} | "
-            f"{payload['images_quality_gated']} | {_usd(payload['usd_per_image'])} | "
-            f"{_usd(payload['list_usd_per_image'])} | {current} | {meets} |"
+            f"| {payload['label']} | {payload['tier']} | {payload['images_submitted']} | "
+            f"{gated_cell} | {_usd(payload['usd_per_image'])} | "
+            f"{_usd(payload['usd_per_processed_image'])} | {_usd(payload['list_usd_per_image'])} | "
+            f"{current} | {meets} |"
         )
 
     lines.append("")
@@ -641,11 +665,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         for stage, usd in payload["cost_by_stage_usd"].items():
             lines.append(f"| {stage} | {_usd(usd)} | {usd / total:.1%} |")
         lines.append("")
-        lines.append("| Form type | Images | $/image | Truth data | Accuracy reportable |")
-        lines.append("|---|---:|---:|---|---|")
+        lines.append("| Form type | Images | Gated | $/image (submitted) | Truth data | Accuracy reportable |")
+        lines.append("|---|---:|---:|---:|---|---|")
         for group in payload["groups"].values():
             lines.append(
-                f"| {group['label']} | {group['images_priced']} | {_usd(group['usd_per_image_mean'])} | "
+                f"| {group['label']} | {group['images_submitted']} | {group['images_quality_gated']} | "
+                f"{_usd(group['usd_per_submitted_image'])} | "
                 f"{group['truth_source'] or 'none supplied'} | "
                 f"{'yes' if group['accuracy_reportable'] else 'NO - cost only'} |"
             )
