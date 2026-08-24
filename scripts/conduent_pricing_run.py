@@ -57,9 +57,6 @@ class Bucket:
     label: str
     directory: str
     tier: str
-    annual_volume: int
-    current_low: float
-    current_high: float
     quality_mix: str
 
 
@@ -111,9 +108,6 @@ BUCKETS: dict[str, Bucket] = {
         label="Structured",
         directory="1 - Structured",
         tier="economy",
-        annual_volume=50_000_000,
-        current_low=0.002,
-        current_high=0.004,
         quality_mix="80% good / 10% medium / 10% bad",
     ),
     "semi-structured": Bucket(
@@ -121,9 +115,6 @@ BUCKETS: dict[str, Bucket] = {
         label="Semi-Structured",
         directory="2 - Semi-Structured",
         tier="standard",
-        annual_volume=10_000_000,
-        current_low=0.004,
-        current_high=0.005,
         quality_mix="70% good / 10% medium / 20% bad",
     ),
     "handwritten": Bucket(
@@ -131,9 +122,6 @@ BUCKETS: dict[str, Bucket] = {
         label="Handwritten",
         directory="3 - Handwritten",
         tier="premium",
-        annual_volume=3_000_000,
-        current_low=0.010,
-        current_high=0.015,
         quality_mix="70% good / 20% medium / 10% bad",
     ),
 }
@@ -166,10 +154,6 @@ GROUPS: list[Group] = [
         "MS_Truth_Data.xlsx :: Enrollments",
     ),
 ]
-
-# Judi pays roughly this much per image on top of vendor fees for on-prem infrastructure.
-ON_PREM_INFRA_PER_IMAGE = 0.01
-PRIOR_BLENDED_RATE = 0.01285
 
 
 # --------------------------------------------------------------------------- #
@@ -421,17 +405,13 @@ def summarize(results: list[DocumentResult]) -> dict[str, Any]:
     priced = [result for result in results if result.status == "ok"]
     gated = [result for result in results if result.status == "quality_gated"]
     # Billing happens per image submitted. Quality-gated scans are rejected before any paid
-    # extraction runs, so they really do cost $0 and belong in the effective submitted rate.
+    # extraction runs, so they cost $0 and count toward the per-image cost at that value.
     submitted = priced + gated
-    costs = [result.usd_per_image for result in priced]
-    list_costs = [result.list_total_usd for result in priced]
-    submitted_costs = [result.usd_per_image for result in submitted]
-    submitted_list_costs = [result.list_total_usd for result in submitted]
+    costs = [result.usd_per_image for result in submitted]
     discounts = {result.discount_pct for result in priced}
     return {
         "images_attempted": len(results),
         "images_submitted": len(submitted),
-        "images_priced": len(priced),
         "images_quality_gated": len(gated),
         "quality_gate_rate": (len(gated) / len(submitted)) if submitted else 0.0,
         "quality_gated": [{"file": result.sample.name, "reasons": result.flag_reasons} for result in gated],
@@ -441,13 +421,10 @@ def summarize(results: list[DocumentResult]) -> dict[str, Any]:
             if result.status not in ("ok", "quality_gated")
         ],
         "discount_pct": max(discounts) if discounts else 0.0,
-        "usd_per_submitted_image": statistics.fmean(submitted_costs) if submitted_costs else None,
-        "list_usd_per_submitted_image": statistics.fmean(submitted_list_costs) if submitted_list_costs else None,
-        "usd_per_image_mean": statistics.fmean(costs) if costs else None,
+        "usd_per_image": statistics.fmean(costs) if costs else None,
         "usd_per_image_median": statistics.median(costs) if costs else None,
         "usd_per_image_min": min(costs) if costs else None,
         "usd_per_image_max": max(costs) if costs else None,
-        "list_usd_per_image_mean": statistics.fmean(list_costs) if list_costs else None,
         "total_usd": sum(costs),
         "total_pages": sum(result.pages for result in priced),
         "total_input_tokens": sum(result.input_tokens for result in priced),
@@ -466,7 +443,6 @@ def build_report(
     for bucket_key, results in results_by_bucket.items():
         bucket = BUCKETS[bucket_key]
         summary = summarize(results)
-        rate = summary["usd_per_submitted_image"]
 
         groups: dict[str, Any] = {}
         for group in [item for item in GROUPS if item.bucket == bucket_key]:
@@ -483,31 +459,11 @@ def build_report(
                 **group_summary,
             }
 
-        projection = None
-        if rate:
-            annual = rate * bucket.annual_volume
-            projection = {
-                "annual_volume": bucket.annual_volume,
-                "argus_annual_usd": annual,
-                "customer_current_low_usd": bucket.current_low * bucket.annual_volume,
-                "customer_current_high_usd": bucket.current_high * bucket.annual_volume,
-                "customer_rate_low": bucket.current_low,
-                "customer_rate_high": bucket.current_high,
-                "delta_vs_current_high_usd": annual - bucket.current_high * bucket.annual_volume,
-                "meets_current_pricing": rate <= bucket.current_high,
-                "prior_blended_annual_usd": PRIOR_BLENDED_RATE * bucket.annual_volume,
-            }
-
         buckets[bucket_key] = {
             "label": bucket.label,
             "tier": bucket.tier,
-            "usd_per_image": rate,
-            "list_usd_per_image": summary["list_usd_per_submitted_image"],
-            "usd_per_processed_image": summary["usd_per_image_mean"],
-            "list_usd_per_processed_image": summary["list_usd_per_image_mean"],
             "customer_quality_mix": bucket.quality_mix,
             "quality_labels_available": False,
-            "projection": projection,
             "groups": groups,
             **summary,
         }
@@ -515,8 +471,6 @@ def build_report(
     return {
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "sample_source": str(source),
-        "prior_blended_rate": PRIOR_BLENDED_RATE,
-        "on_prem_infra_per_image": ON_PREM_INFRA_PER_IMAGE,
         "buckets": buckets,
         "inventory_notes": inventory_notes,
         "caveats": _caveats(buckets),
@@ -573,10 +527,11 @@ def _caveats(buckets: dict[str, Any]) -> list[str]:
     discounts = {payload.get("discount_pct") or 0.0 for payload in buckets.values()}
     applied = max(discounts) if discounts else 0.0
     if applied:
+        multiplier = 1 / (1 - applied / 100.0)
         caveats.append(
-            f"Rates are NET of a {applied:.0f}% agreement discount configured on this deployment. Azure list "
-            "price is shown alongside each net rate. Confirm the discount that will actually apply to Conduent "
-            "before quoting the net figure externally."
+            f"Costs are NET of a {applied:.0f}% agreement discount configured on this deployment. Azure list "
+            f"price is approximately {multiplier:.2f}x these figures. Confirm the discount that will actually "
+            "apply to Conduent before quoting these numbers externally."
         )
 
     caveats.append(
@@ -596,62 +551,22 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append(f"Generated: {report['generated_at_utc']}")
     lines.append("")
-    lines.append("## Per-image rate by document type")
+    lines.append("## Cost per image by document type")
     lines.append("")
     lines.append(
-        "Rates are per image *submitted*, which is the unit Conduent is billed on. Images rejected by the "
-        "pre-extraction quality gate never reach paid extraction and are included at $0. The processed-only "
-        "rate is shown alongside so both views are visible."
+        "Cost is per image submitted. Images rejected by the pre-extraction quality gate never reach paid "
+        "extraction and are counted at $0."
     )
     lines.append("")
-    lines.append(
-        "| Document type | Tier | Images submitted | Quality-gated | Net $/image (submitted) | "
-        "Net $/image (processed only) | List $/image (submitted) | Customer pays today | Meets target |"
-    )
-    lines.append("|---|---|---:|---:|---:|---:|---:|---|:--:|")
+    lines.append("| Document type | Tier | Images | Quality-gated | Cost per image |")
+    lines.append("|---|---|---:|---:|---:|")
     for payload in report["buckets"].values():
-        projection = payload.get("projection") or {}
-        current = (
-            f"{_usd(projection.get('customer_rate_low'), 4)} - {_usd(projection.get('customer_rate_high'), 4)}"
-            if projection
-            else "n/a"
-        )
-        meets = "yes" if projection.get("meets_current_pricing") else "no"
         gated = payload["images_quality_gated"]
         gated_cell = f"{gated} ({payload['quality_gate_rate']:.0%})" if gated else "0"
         lines.append(
             f"| {payload['label']} | {payload['tier']} | {payload['images_submitted']} | "
-            f"{gated_cell} | {_usd(payload['usd_per_image'])} | "
-            f"{_usd(payload['usd_per_processed_image'])} | {_usd(payload['list_usd_per_image'])} | "
-            f"{current} | {meets} |"
+            f"{gated_cell} | {_usd(payload['usd_per_image'])} |"
         )
-
-    lines.append("")
-    lines.append("## Annual projection")
-    lines.append("")
-    lines.append("| Document type | Annual volume | ARGUS annual | Customer vendor spend today | Delta vs high end |")
-    lines.append("|---|---:|---:|---:|---:|")
-    argus_total = 0.0
-    current_low_total = 0.0
-    current_high_total = 0.0
-    for payload in report["buckets"].values():
-        projection = payload.get("projection")
-        if not projection:
-            continue
-        argus_total += projection["argus_annual_usd"]
-        current_low_total += projection["customer_current_low_usd"]
-        current_high_total += projection["customer_current_high_usd"]
-        lines.append(
-            f"| {payload['label']} | {projection['annual_volume']:,} | "
-            f"{_usd(projection['argus_annual_usd'], 0)} | "
-            f"{_usd(projection['customer_current_low_usd'], 0)} - {_usd(projection['customer_current_high_usd'], 0)} | "
-            f"{_usd(projection['delta_vs_current_high_usd'], 0)} |"
-        )
-    lines.append(
-        f"| **Total** | | **{_usd(argus_total, 0)}** | "
-        f"**{_usd(current_low_total, 0)} - {_usd(current_high_total, 0)}** | "
-        f"**{_usd(argus_total - current_high_total, 0)}** |"
-    )
 
     lines.append("")
     lines.append("## Cost composition by document type")
@@ -665,12 +580,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         for stage, usd in payload["cost_by_stage_usd"].items():
             lines.append(f"| {stage} | {_usd(usd)} | {usd / total:.1%} |")
         lines.append("")
-        lines.append("| Form type | Images | Gated | $/image (submitted) | Truth data | Accuracy reportable |")
+        lines.append("| Form type | Images | Gated | Cost per image | Truth data | Accuracy reportable |")
         lines.append("|---|---:|---:|---:|---|---|")
         for group in payload["groups"].values():
             lines.append(
                 f"| {group['label']} | {group['images_submitted']} | {group['images_quality_gated']} | "
-                f"{_usd(group['usd_per_submitted_image'])} | "
+                f"{_usd(group['usd_per_image'])} | "
                 f"{group['truth_source'] or 'none supplied'} | "
                 f"{'yes' if group['accuracy_reportable'] else 'NO - cost only'} |"
             )
@@ -703,8 +618,7 @@ def write_documents_csv(path: Path, results_by_bucket: dict[str, list[DocumentRe
                 "status",
                 "tier",
                 "pages",
-                "usd_per_image_net",
-                "usd_per_image_list",
+                "usd_per_image",
                 "discount_pct",
                 "input_tokens",
                 "output_tokens",
@@ -723,8 +637,7 @@ def write_documents_csv(path: Path, results_by_bucket: dict[str, list[DocumentRe
                         result.status,
                         result.tier or "",
                         result.pages,
-                        f"{result.total_usd:.8f}" if result.status == "ok" else "",
-                        f"{result.list_total_usd:.8f}" if result.status == "ok" else "",
+                        f"{result.total_usd:.8f}" if result.status in ("ok", "quality_gated") else "",
                         result.discount_pct,
                         result.input_tokens,
                         result.output_tokens,
